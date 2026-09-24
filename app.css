@@ -21,3 +21,5 @@ button:focus-visible,select:focus-visible,summary:focus-visible,.flashcard:focus
 @media(max-width:800px){.vocab-analytics{margin:10px 0 18px}}
 
 :root[data-theme="dark"] .card-word,:root[data-theme="dark"] .word{color:#ffd1d0}:root[data-theme="dark"] .primary{background:#a84554;border-color:#d27d87;color:#fffafa}:root[data-theme="dark"] .primary:hover{background:#bd5968}:root[data-theme="dark"] .meta-chip{color:#ffb9b9}
+
+.lesson-guide{margin-top:18px;padding:13px 15px;border-left:3px solid var(--green);background:var(--tint);border-radius:0 9px 9px 0}.lesson-guide strong{color:var(--green);font-size:11px;letter-spacing:.12em}.lesson-guide p{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--ink)}

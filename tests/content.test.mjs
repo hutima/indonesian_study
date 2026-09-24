@@ -6,7 +6,7 @@ import { validateContent } from '../scripts/validate-content.mjs';
 test('curated units have unique stable IDs and complete vocabulary and question data', () => {
   const issues = validateContent(UNITS);
   assert.deepEqual(issues, []);
-  assert.equal(UNITS.length, 3);
+  assert.equal(UNITS.length, 5);
   for (const unit of UNITS) {
     assert.ok(unit.vocabulary.length > 0);
     for (const item of [...unit.vocabulary, ...unit.morphology, ...unit.readings]) assert.equal(item.unitId, unit.id);
@@ -18,6 +18,11 @@ test('curated units have unique stable IDs and complete vocabulary and question 
   assert.ok(newVocabulary.every(item => item.pos && item.register && item.kind && (item.kind !== 'derived' || item.root)));
   assert.ok(UNITS[2].morphology.some(card => card.steps.some(step => step.focus === 'semantic')));
   assert.ok(UNITS[2].morphology.every(card => card.steps.some(step => step.focus === 'semantic')));
+  for (const unit of UNITS.slice(3)) {
+    assert.ok(unit.guide.vocabulary && unit.guide.morphology && unit.guide.reading);
+    assert.ok(unit.vocabulary.length >= 12);
+    assert.ok(unit.morphology.every(card => card.steps.some(step => step.focus === 'semantic')));
+  }
 });
 
 test('validator rejects duplicate IDs and incorrect answer choice sets', () => {
