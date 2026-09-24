@@ -15,42 +15,51 @@
     <span id="offline-status" class="offline-status">Preparing offline access…</span>
   </header>
   <main class="layout">
-    <aside class="sidebar">
-      <p class="eyebrow">STUDY PATH</p>
-      <h1>Read with confidence.</h1>
-      <p>Recognize a root, see how its form changes, then meet it in a short passage.</p>
-      <div class="selector-heading"><strong>Textbook lessons</strong><span>Yang Tersirat dan Yang Tersurat</span></div>
-      <div class="selector-actions"><button id="select-all-topics" type="button">Select all Topik</button><button id="clear-lessons" type="button">Clear</button></div>
-      <div id="lesson-grid" class="lesson-grid" role="group" aria-label="Textbook lessons"></div>
-      <details class="foundation-selector"><summary>Foundation practice</summary><div id="foundation-grid" class="lesson-grid" role="group" aria-label="Foundation lessons"></div></details>
-      <div id="unit-description" class="unit-description"></div>
-      <section id="lesson-guide" class="lesson-guide" aria-label="Lesson focus"></section>
-      <details id="word-list" class="word-list"><summary>Lesson vocabulary</summary><div id="word-list-content"></div></details>
-      <div id="vocab-analytics" class="vocab-analytics" aria-label="Vocabulary progress"></div>
-      <details class="data-tools"><summary>Your progress</summary>
-        <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
-        <button id="export-button" type="button">Export JSON</button>
-        <label class="import-label" for="import-file">Import JSON</label><input id="import-file" type="file" accept="application/json,.json">
-        <button id="reset-button" type="button" class="quiet">Reset progress</button>
-      </details>
-    </aside>
     <section class="workspace" aria-label="Study area">
+      <div class="study-controls">
+        <button id="open-lessons" class="selector-trigger" type="button" aria-haspopup="dialog" aria-controls="lesson-dialog">Choose topics</button>
+        <span id="selection-summary" class="selection-summary" aria-live="polite"></span>
+        <details id="settings-panel" class="settings-panel"><summary>Settings</summary>
+          <div class="settings-content">
+            <label class="theme-label" for="theme-select">Theme</label><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+            <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary options">
+              <button type="button" id="spaced-toggle" aria-pressed="true">Spaced review: On</button>
+              <button type="button" id="direction-toggle" aria-pressed="false">Indonesian → English</button>
+              <button type="button" id="shuffle-button">Shuffle</button>
+            </div>
+            <details class="data-tools"><summary>Your progress</summary>
+              <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
+              <button id="export-button" type="button">Export JSON</button>
+              <label class="import-label" for="import-file">Import JSON</label><input id="import-file" type="file" accept="application/json,.json">
+              <button id="reset-button" type="button" class="quiet">Reset progress</button>
+            </details>
+          </div>
+        </details>
+      </div>
       <nav class="tabs" aria-label="Study mode">
         <button type="button" data-mode="vocabulary" aria-current="page">Vocabulary</button>
         <button type="button" data-mode="morphology">Morphology</button>
         <button type="button" data-mode="grammar">Grammar</button>
         <button type="button" data-mode="reading">Reading</button>
       </nav>
-      <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary options">
-        <button type="button" id="spaced-toggle" aria-pressed="true">Spaced review: On</button>
-        <button type="button" id="direction-toggle" aria-pressed="false">Indonesian → English</button>
-        <button type="button" id="shuffle-button">Shuffle</button>
-        <label class="theme-label" for="theme-select">Theme</label><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
-      </div>
       <div id="study-panel" class="study-panel" aria-live="polite"></div>
+      <details class="study-resources"><summary>Lesson details and vocabulary progress</summary>
+        <div id="unit-description" class="unit-description"></div>
+        <section id="lesson-guide" class="lesson-guide" aria-label="Lesson focus"></section>
+        <details id="word-list" class="word-list"><summary>Lesson vocabulary</summary><div id="word-list-content"></div></details>
+        <div id="vocab-analytics" class="vocab-analytics" aria-label="Vocabulary progress"></div>
+      </details>
     </section>
   </main>
   <footer>Curated exercises · Works offline after the first complete load · No account or tracking</footer>
+  <dialog id="lesson-dialog" class="lesson-dialog" aria-labelledby="lesson-dialog-title">
+    <div class="dialog-header"><div><h2 id="lesson-dialog-title">Choose topics</h2><p>Yang Tersirat dan Yang Tersurat · Select one or several lessons.</p></div><button id="close-lessons" type="button" aria-label="Close topic selection">✕</button></div>
+    <div class="selector-actions"><button id="select-all-topics" type="button">Select all Topik</button><button id="clear-lessons" type="button">Clear</button></div>
+    <div class="dialog-scroll"><div id="lesson-grid" class="lesson-grid" role="group" aria-label="Textbook lessons"></div>
+      <details class="foundation-selector"><summary>Foundation practice</summary><div id="foundation-grid" class="lesson-grid" role="group" aria-label="Foundation lessons"></div></details>
+    </div>
+    <div class="dialog-footer"><span id="dialog-selection-summary"></span><button id="done-lessons" class="primary" type="button">Done</button></div>
+  </dialog>
   <dialog id="update-dialog" class="update-dialog" aria-labelledby="update-title">
     <h2 id="update-title">Update available</h2>
     <p>A new version is ready. Refresh to load the latest words and exercises. Your progress will stay in this browser.</p>

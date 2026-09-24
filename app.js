@@ -7,6 +7,10 @@ import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLes
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
 const foundationGrid = document.querySelector('#foundation-grid');
+const lessonDialog = document.querySelector('#lesson-dialog');
+const openLessons = document.querySelector('#open-lessons');
+const selectionSummary = document.querySelector('#selection-summary');
+const dialogSelectionSummary = document.querySelector('#dialog-selection-summary');
 const description = document.querySelector('#unit-description');
 const guide = document.querySelector('#lesson-guide');
 const wordList = document.querySelector('#word-list');
@@ -120,6 +124,11 @@ function renderWordList() {
 }
 function describeSelection() {
   const units = selectedUnits(UNITS, lessonIds);
+  const label = !units.length ? 'No lessons selected'
+    : units.length === 1 ? `${units[0].bookTopic ? `Topik ${units[0].bookTopic}` : 'Foundation'} · ${units[0].title}`
+    : `${units.length} lessons selected`;
+  selectionSummary.textContent = label;
+  dialogSelectionSummary.textContent = label;
   description.textContent = !units.length ? 'Choose at least one lesson to begin.'
     : units.length === 1 ? units[0].description
     : `${units.length} lessons selected. Practice combines their exercises in book order.`;
@@ -133,7 +142,9 @@ function renderLessonSelector() {
       const tile = button('', 'lesson-tile' + (selected ? ' selected' : ''), () => {
         lessonIds = selected ? lessonIds.filter(id => id !== unit.id) : normalizeLessonIds([...lessonIds, unit.id], UNITS);
         saveLessonSelection();
+        if (lessonDialog.open) [...grid.querySelectorAll('.lesson-tile')].find(candidate => candidate.dataset.lessonId === unit.id)?.focus();
       });
+      tile.dataset.lessonId = unit.id;
       tile.setAttribute('aria-pressed', String(selected));
       add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', `${unit.vocabulary.length} words · ${unit.morphology.length} forms`));
       grid.append(tile);
@@ -304,6 +315,10 @@ function render() {
   else renderReading(item, items);
 }
 
+openLessons.addEventListener('click', () => lessonDialog.showModal());
+lessonDialog.addEventListener('close', () => openLessons.focus());
+document.querySelector('#close-lessons').addEventListener('click', () => lessonDialog.close());
+document.querySelector('#done-lessons').addEventListener('click', () => lessonDialog.close());
 document.querySelector('#select-all-topics').addEventListener('click', () => {
   lessonIds = normalizeLessonIds([...lessonIds, ...TEXTBOOK_UNITS.map(unit => unit.id)], UNITS);
   saveLessonSelection();
