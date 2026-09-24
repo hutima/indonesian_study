@@ -3,6 +3,7 @@ import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVoca
 import { createDeck, markDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
+import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts } from './vocab-sections.js';
 
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
@@ -18,6 +19,8 @@ const wordListContent = document.querySelector('#word-list-content');
 const status = document.querySelector('#offline-status');
 const analytics = document.querySelector('#vocab-analytics');
 const toolbar = document.querySelector('#vocab-toolbar');
+const vocabSectionWrap = document.querySelector('#vocab-section-wrap');
+const vocabSectionSelect = document.querySelector('#vocab-section');
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 let progress = loadProgress(localStorage);
@@ -32,6 +35,8 @@ let chosen = null;
 let translationShown = false;
 let spaced = true;
 let reverse = false;
+const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
+let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
 let deck;
 
 const node = (tag, className, content) => {
@@ -108,19 +113,18 @@ function renderGuide() {
 }
 function renderWordList() {
   wordList.hidden = !lessonIds.length;
-  const cards = poolVocab();
+  const cards = itemsForMode(UNITS, lessonIds, 'vocabulary');
   const supplemental = cards.filter(card => card.sourceRootId).length;
   wordList.querySelector('summary').textContent = `Vocabulary list · ${cards.length} words${supplemental ? ` (${supplemental} supplemental)` : ''}`;
   wordListContent.replaceChildren();
+  if (!wordList.open) return;
   for (const unit of selectedUnits(UNITS, lessonIds)) {
     const group = node('section', 'word-list-group');
     group.append(node('h3', '', `${unit.bookTopic ? `Topik ${unit.bookTopic}` : 'Foundation'} · ${unit.title}`));
-    for (const [label, vocabulary] of [
-      ['Lesson words', unit.vocabulary.filter(card => !card.sourceRootId)],
-      ['Supplemental root families', unit.vocabulary.filter(card => card.sourceRootId)]
-    ]) {
+    for (const [key, label] of VOCAB_SECTIONS.slice(1)) {
+      const vocabulary = filterVocabSection(unit.vocabulary, key);
       if (!vocabulary.length) continue;
-      group.append(node('h4', '', label));
+      group.append(node('h4', '', `${label} · ${vocabulary.length}`));
       for (const card of vocabulary) {
         const row = node('div', 'word-list-row');
         add(row, node('strong', '', card.form), node('span', '', card.meaning));
@@ -130,6 +134,15 @@ function renderWordList() {
     }
     wordListContent.append(group);
   }
+}
+function renderVocabSectionSelector() {
+  const counts = vocabSectionCounts(itemsForMode(UNITS, lessonIds, 'vocabulary'));
+  vocabSectionSelect.replaceChildren(...VOCAB_SECTIONS.map(([key, label]) => {
+    const option = node('option', '', `${label} · ${counts[key]}`);
+    option.value = key;
+    return option;
+  }));
+  vocabSectionSelect.value = vocabSection;
 }
 function describeSelection() {
   const units = selectedUnits(UNITS, lessonIds);
@@ -162,7 +175,7 @@ function renderLessonSelector() {
 }
 function saveLessonSelection() {
   localStorage.setItem(SELECTION_KEY, JSON.stringify(lessonIds));
-  renderLessonSelector(); describeSelection(); renderGuide(); renderWordList();
+  renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector();
   itemIndex = 0; stepIndex = 0; chosen = null; translationShown = false;
   startVocabDeck(); renderProgress(); render();
 }
@@ -180,7 +193,7 @@ function nextLabel(items) {
   return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : mode === 'grammar' ? 'Next question' : 'Next form';
 }
 
-const poolVocab = () => itemsForMode(UNITS, lessonIds, 'vocabulary');
+const poolVocab = () => filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection);
 function startVocabDeck() {
   deck = createDeck(poolVocab(), progress, spaced);
   revealed = false;
@@ -210,7 +223,7 @@ function flipCard() {
 }
 function renderVocab() {
   const items = poolVocab();
-  if (!items.length) { panel.append(node('p', 'empty', 'Select a textbook lesson or foundation set to begin.')); return; }
+  if (!items.length) { panel.append(node('p', 'empty', lessonIds.length ? 'No words in this section. Choose another vocabulary section.' : 'Select a textbook lesson or foundation set to begin.')); return; }
   if (!deck) startVocabDeck();
   head('VOCABULARY · FLIP CARDS', `${deck.completed} of ${deck.total} completed`);
   if (!deck.active.length) {
@@ -310,6 +323,7 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
+  vocabSectionWrap.hidden = mode !== 'vocabulary';
   wordList.hidden = !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
@@ -333,6 +347,12 @@ document.querySelector('#select-all-topics').addEventListener('click', () => {
   saveLessonSelection();
 });
 document.querySelector('#clear-lessons').addEventListener('click', () => { lessonIds = []; saveLessonSelection(); });
+wordList.addEventListener('toggle', () => { if (wordList.open) renderWordList(); });
+vocabSectionSelect.addEventListener('change', () => {
+  vocabSection = vocabSectionSelect.value;
+  localStorage.setItem(VOCAB_SECTION_KEY, vocabSection);
+  startVocabDeck(); renderProgress(); render();
+});
 document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('click', () => {
   mode = tab.dataset.mode;
   document.querySelectorAll('[data-mode]').forEach(other => { if (other === tab) other.setAttribute('aria-current', 'page'); else other.removeAttribute('aria-current'); });
@@ -389,7 +409,7 @@ function applyTheme() {
 themeSelect.addEventListener('change', () => { theme = themeSelect.value; localStorage.setItem(THEME_KEY, theme); applyTheme(); });
 systemTheme.addEventListener?.('change', applyTheme);
 applyTheme();
-renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); startVocabDeck(); renderProgress(); render();
+renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); startVocabDeck(); renderProgress(); render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const dialog = document.querySelector('#update-dialog');

@@ -63,6 +63,7 @@ export function validateContent(units) {
         if (!isNonEmptyString(unit.guide?.[mode])) issues.push(`${path}.guide.${mode}: expected lesson focus`);
       }
     }
+    const vocabularyForms = new Set();
     if (unit.bookTopic !== undefined && (!Array.isArray(unit.grammar) || unit.grammar.length < 3)) {
       issues.push(`${path}.grammar: expected at least three questions for textbook topics`);
     }
@@ -89,12 +90,19 @@ export function validateContent(units) {
         if (item.unitId !== unit.id) issues.push(`${itemPath}.unitId: must reference ${unit.id}`);
         if (kind === 'vocabulary') {
           for (const key of ['form', 'meaning', 'example']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
+          if (isNonEmptyString(item.form)) {
+            const key = item.form.toLocaleLowerCase('id');
+            if (vocabularyForms.has(key)) issues.push(`${itemPath}.form: duplicate vocabulary form in unit`);
+            vocabularyForms.add(key);
+          }
           if (!['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'determiner', 'preposition', 'conjunction', 'modal', 'interrogative', 'interjection', 'particle'].includes(item.pos)) issues.push(`${itemPath}.pos: expected supported part-of-speech label`);
           if (!['neutral', 'formal', 'informal'].includes(item.register)) issues.push(`${itemPath}.register: expected neutral, formal, or informal`);
           if (!['root', 'derived'].includes(item.kind)) issues.push(`${itemPath}.kind: expected root or derived`);
           if (item.kind === 'derived' && !isNonEmptyString(item.root)) issues.push(`${itemPath}.root: derived vocabulary must identify its root`);
           if (item.irregular !== undefined && typeof item.irregular !== 'boolean') issues.push(`${itemPath}.irregular: expected boolean when provided`);
           if (item.sourceRootId !== undefined && (!Number.isInteger(item.sourceRootId) || item.sourceRootId < 1)) issues.push(`${itemPath}.sourceRootId: expected a positive PBWL RootID`);
+          if (item.section !== undefined && !['families', 'reading', 'everyday'].includes(item.section)) issues.push(`${itemPath}.section: expected a vocabulary section`);
+          if (item.sourceRootId !== undefined && isNonEmptyString(item.form) && isNonEmptyString(item.example) && !item.example.toLocaleLowerCase('id').includes(item.form.toLocaleLowerCase('id'))) issues.push(`${itemPath}.example: must contain the sourced form`);
         } else if (kind === 'morphology') {
           for (const key of ['form', 'context', 'root', 'process', 'meaning']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
           if (!Array.isArray(item.affixes) || item.affixes.some(affix => !isNonEmptyString(affix))) issues.push(`${itemPath}.affixes: expected array of strings`);
