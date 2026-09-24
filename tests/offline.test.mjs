@@ -66,3 +66,14 @@ test('an installed update waits for an explicit refresh request', async () => {
   await requested;
   assert.equal(skipCalls, 1);
 });
+
+
+test('offline content request refuses non-lesson paths', async () => {
+  const handlers = new Map();
+  const self = { addEventListener: (type, fn) => handlers.set(type, fn) };
+  const script = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
+  vm.runInNewContext(script, { self });
+  let reply;
+  handlers.get('message')({ data: { type: 'CACHE_CONTENT', urls: ['./content/textbook/../secret.js'] }, ports: [{ postMessage: value => { reply = value; } }] });
+  assert.equal(reply.ready, false);
+});

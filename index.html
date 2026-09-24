@@ -19,10 +19,13 @@
       <p class="eyebrow">STUDY PATH</p>
       <h1>Read with confidence.</h1>
       <p>Recognize a root, see how its form changes, then meet it in a short passage.</p>
-      <label for="unit-select">Practice unit</label>
-      <select id="unit-select"></select>
+      <div class="selector-heading"><strong>Textbook lessons</strong><span>Yang Tersirat dan Yang Tersurat</span></div>
+      <div class="selector-actions"><button id="select-all-topics" type="button">Select all Topik</button><button id="clear-lessons" type="button">Clear</button></div>
+      <div id="lesson-grid" class="lesson-grid" role="group" aria-label="Textbook lessons"></div>
+      <details class="foundation-selector"><summary>Foundation practice</summary><div id="foundation-grid" class="lesson-grid" role="group" aria-label="Foundation lessons"></div></details>
       <div id="unit-description" class="unit-description"></div>
       <section id="lesson-guide" class="lesson-guide" aria-label="Lesson focus"></section>
+      <details id="word-list" class="word-list"><summary>Lesson vocabulary</summary><div id="word-list-content"></div></details>
       <div id="vocab-analytics" class="vocab-analytics" aria-label="Vocabulary progress"></div>
       <details class="data-tools"><summary>Your progress</summary>
         <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
