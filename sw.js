@@ -1,11 +1,13 @@
 // Offline shell. The app supplies the content module URLs after registration.
-const CACHE = 'indonesian-study-v2';
+const CACHE = 'indonesian-study-v3';
 const SHELL = [
-  './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js',
+  './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './navigation.js',
+  './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',
   './content/manifest.js', './manifest.json', './sw.js'
 ];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
+  // Bypass the browser HTTP cache when populating a new version.
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL.map(path => new Request(path, { cache: 'reload' })))));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(Promise.all([
@@ -19,12 +21,16 @@ self.addEventListener('message', event => {
   const urls = event.data.urls;
   const safe = Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && /^\.\/content\/units\/[a-z0-9_-]+\.js$/.test(url));
   if (!safe) { event.ports[0]?.postMessage({ ready: false }); return; }
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls)).then(() => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))).then(() => {
     event.ports[0]?.postMessage({ ready: true });
   }).catch(() => { event.ports[0]?.postMessage({ ready: false }); }));
 });
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html'))));
+    return;
+  }
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
     // Cache only successful local reads; the app does not request remote assets.
     if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(event.request, copy))); }

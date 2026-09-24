@@ -10,7 +10,7 @@ test('service worker caches the shell and every registered content unit for offl
   const handlers = new Map();
   const stored = new Map();
   const cache = {
-    addAll: async urls => { for (const url of urls) stored.set(new URL(url, pagesBase).href, { body: url, ok: true }); },
+    addAll: async urls => { for (const url of urls) stored.set(new URL(url.url || url, pagesBase).href, { body: url, ok: true }); },
     put: async (request, response) => stored.set(request.url, response)
   };
   const caches = {
@@ -26,7 +26,7 @@ test('service worker caches the shell and every registered content unit for offl
     addEventListener: (type, handler) => handlers.set(type, handler)
   };
   const script = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
-  vm.runInNewContext(script, { self: worker, caches, URL, fetch: () => { throw new Error('Network should not be used for cached files'); } });
+  vm.runInNewContext(script, { self: worker, caches, URL, Request: class { constructor(path, options) { this.url = new URL(path, pagesBase).href; this.cache = options.cache; } }, fetch: () => { throw new Error('Network should not be used for cached files'); } });
   let install;
   handlers.get('install')({ waitUntil: promise => { install = promise; } });
   await install;
@@ -41,7 +41,7 @@ test('service worker caches the shell and every registered content unit for offl
   await prefetch;
   assert.equal(ready, true);
 
-  for (const path of ['./index.html', './app.js', './progress.js', './vocab-deck.js', './content/manifest.js', ...UNIT_URLS]) {
+  for (const path of ['./index.html', './app.js', './progress.js', './vocab-deck.js', './vocab-charts.js', './navigation.js', './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js', './content/manifest.js', ...UNIT_URLS]) {
     let response;
     const request = { url: new URL(path, pagesBase).href, method: 'GET' };
     handlers.get('fetch')({ request, respondWith: promise => { response = promise; }, waitUntil: () => {} });
@@ -56,7 +56,7 @@ test('an installed update waits for an explicit refresh request', async () => {
   const caches = { open: async () => ({ addAll: async () => {} }) };
   const self = { addEventListener: (type, fn) => handlers.set(type, fn), skipWaiting: async () => { skipCalls++; } };
   const script = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
-  vm.runInNewContext(script, { self, caches });
+  vm.runInNewContext(script, { self, caches, Request: class { constructor(path) { this.url = path; } } });
   let install;
   handlers.get('install')({ waitUntil: promise => { install = promise; } });
   await install;

@@ -49,3 +49,29 @@ test('spaced Again makes the card due soon; Unsure uses a shorter delay than Kno
   assert.ok(again.items['id-u02-voc-baca'].dueAt < unsure.items['id-u02-voc-baca'].dueAt);
   assert.ok(unsure.items['id-u02-voc-baca'].dueAt < second.items['id-u02-voc-baca'].dueAt + 7 * 24 * 60 * 60 * 1000);
 });
+
+test('eight-month Duff cadence stabilizes before growth and retains relearn state across saves', () => {
+  const storage = memoryStorage();
+  const id = 'id-u01-voc-rumah';
+  let state = loadProgress(storage);
+  const start = 1_700_000_000_000;
+  for (let n = 0; n < 5; n++) {
+    state = recordVocabReview(state, id, 'know', true, start + n * 86400000);
+    if (n < 4) assert.equal(state.items[id].intervalDays, 1);
+  }
+  assert.equal(state.items[id].intervalDays, 2);
+  saveProgress(storage, state);
+  state = recordVocabReview(loadProgress(storage), id, 'again', true, start + 6 * 86400000);
+  assert.equal(state.items[id].inRelearn, true);
+  assert.equal(state.items[id].relearnLeft, 2);
+  assert.equal(state.items[id].dueAt, start + 6 * 86400000 + 300000);
+  const uncertain = recordVocabReview(loadProgress(storage), id, 'unsure', true, start + 6 * 86400000);
+  assert.equal(uncertain.items[id].dueAt, start + 6 * 86400000 + 7200000);
+});
+
+test('four hard lapses invoke Duff relaxed leech drill', () => {
+  let state = { version: 1, items: {} };
+  for (let n = 0; n < 4; n++) state = recordVocabReview(state, 'id-u02-voc-baca', 'again', true, 1_700_000_000_000 + n * 86400000);
+  assert.equal(state.items['id-u02-voc-baca'].leechDrill, true);
+  assert.equal(state.items['id-u02-voc-baca'].intervalDays, 1);
+});
