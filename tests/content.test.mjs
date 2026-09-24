@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { UNITS } from '../content/manifest.js';
+import { validateContent } from '../scripts/validate-content.mjs';
+
+test('curated units have unique stable IDs and complete vocabulary and question data', () => {
+  const issues = validateContent(UNITS);
+  assert.deepEqual(issues, []);
+  assert.equal(UNITS.length, 2);
+  for (const unit of UNITS) {
+    assert.ok(unit.vocabulary.length > 0);
+    for (const item of [...unit.vocabulary, ...unit.morphology, ...unit.readings]) assert.equal(item.unitId, unit.id);
+    assert.ok(unit.morphology.length > 0);
+    assert.ok(unit.readings.length > 0);
+  }
+});
+
+test('validator rejects duplicate IDs and incorrect answer choice sets', () => {
+  const invalid = [{
+    id: 'unit-x', title: 'x', level: 1, description: 'x',
+    vocabulary: [{ id: 'same', form: 'x', meaning: 'x', example: 'x' }],
+    morphology: [{
+      id: 'same', form: 'x', context: 'x', root: 'x', affixes: [], process: 'x', meaning: 'x',
+      steps: [{ prompt: 'x', choices: ['a', 'b'], answer: 'missing', explanation: 'x' }]
+    }],
+    readings: [{ id: 'r', title: 'r', text: 'x', translation: 'x', questions: [{
+      id: 'q', prompt: 'x', choices: ['a', 'a'], answer: 'a', explanation: 'x'
+    }] }]
+  }];
+  const issues = validateContent(invalid);
+  assert.ok(issues.some(issue => issue.includes('Duplicate ID')));
+  assert.ok(issues.some(issue => issue.includes('answer')));
+  assert.ok(issues.some(issue => issue.includes('distinct')));
+});
+
+test('validator rejects reading questions without passage context', () => {
+  const invalid = [{
+    id: 'unit-x', title: 'x', level: 1, description: 'x', vocabulary: [], morphology: [],
+    readings: [{ id: 'r', title: 'r', text: '', translation: '', questions: [{
+      id: 'q', prompt: 'x', choices: ['a', 'b'], answer: 'a', explanation: 'x'
+    }] }]
+  }];
+  assert.ok(validateContent(invalid).some(issue => issue.includes('reading text')));
+});
+
+test('validator rejects a question attached to the wrong unit', () => {
+  const units = structuredClone(UNITS);
+  units[0].readings[0].questions[0].unitId = 'nonexistent';
+  assert.ok(validateContent(units).some(issue => issue.includes('must reference')));
+});
