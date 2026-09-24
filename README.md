@@ -1,6 +1,6 @@
 # Indonesian Study
 
-An offline-first Indonesian literacy and word-formation study app, adapted from the structure of [Duff Study Tool](https://github.com/hutima/duff_study_tool). It uses flip cards for vocabulary and curated multiple-choice morphology and reading questions. No account, audio, tracking, or external services are required while studying. Vocabulary review counts stay in your browser.
+An offline-first Indonesian literacy and word-formation study app, adapted from the structure of [Duff Study Tool](https://github.com/hutima/duff_study_tool). It uses flip cards for vocabulary and curated multiple-choice morphology, grammar, and reading questions. No account, audio, tracking, or external services are required while studying. Vocabulary review counts stay in your browser.
 
 ## Run locally
 
@@ -12,11 +12,11 @@ Configure Pages to publish from `main` at the repository root (`/`). The project
 
 ## Textbook-aligned study path
 
-The selector follows all 15 Topik in Ulrich Kozok’s *Yang Tersirat dan Yang Tersurat*, in the supplied PDF order. Choose one or several Topik, or open Foundation practice for the earlier bridge units. Each Topik has 21–30 selected words with a browsable list, affix recognition exercises, and newly written short readings with comprehension questions. Vocabulary is selected from the topic’s glossary and prose; the reading passages and questions are original. The source PDFs and articles are not distributed with the app. See the [topic-by-topic curriculum map](docs/curriculum/textbook-roadmap.md).
+The selector follows all 15 Topik in Ulrich Kozok’s *Yang Tersirat dan Yang Tersurat*, in the supplied PDF order. Choose one or several Topik, or open Foundation practice for the earlier bridge units. Each Topik has 21–30 selected words with a browsable list, affix recognition exercises, three contextual grammar questions, and newly written short readings with comprehension questions. Vocabulary is selected from the topic’s glossary and prose; the reading passages and questions are original. The source PDFs and articles are not distributed with the app. See the [topic-by-topic curriculum map](docs/curriculum/textbook-roadmap.md).
 
 ## Add content
 
-Create `content/textbook/topikNN.js` (or a foundation module in `content/units/`) exporting an object with `id`, `bookTopic` for textbook lessons, `title`, `level`, `description`, optional `guide` for each mode, `vocabulary`, `morphology`, and `readings`. Register it in `content/manifest.js` in both `UNITS` and `UNIT_URLS`. IDs are permanent: do not reuse or change an existing item ID. Every vocabulary entry has `pos`, `register` (formal, informal, or neutral), and `kind` (root or derived); derived forms have `root`, and opaque or irregular forms can set `irregular: true`. Every morphology step and reading question has curated choices, one exact answer, and an explanation. Include a semantic-effect question for each affixed morphology form so learners practice what the affix does in context. See existing units for examples.
+Create `content/textbook/topikNN.js` (or a foundation module in `content/units/`) exporting an object with `id`, `bookTopic` for textbook lessons, `title`, `level`, `description`, optional `guide` for each mode, `vocabulary`, `morphology`, and `readings`. Register it in `content/manifest.js` in both `UNITS` and `UNIT_URLS`. IDs are permanent: do not reuse or change an existing item ID. Every vocabulary entry has `pos`, `register` (formal, informal, or neutral), and `kind` (root or derived); derived forms have `root`, and opaque or irregular forms can set `irregular: true`. Every morphology step, grammar question, and reading question has curated choices, one exact answer, and an explanation. Grammar questions also carry an original contextual sentence and a permanent ID. Include a semantic-effect question for each affixed morphology form so learners practice what the affix does in context. See existing units for examples.
 
 Run `npm test` and `npm run validate` before committing content. Bump `CACHE` in `sw.js` when publishing changed runtime assets so previously installed copies receive a fresh cache. The app precaches any unit paths in `UNIT_URLS` after load, with an offline-ready acknowledgment.
 
