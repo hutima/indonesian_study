@@ -58,7 +58,7 @@ function renderProgress() {
   analytics.replaceChildren(
     node('strong', '', 'Vocabulary'),
     node('span', '', `${reviewed.length} / ${cards.length} practiced`),
-    node('span', '', `${mastered} at 3+ Know reviews`),
+    node('span', '', `${mastered} at 3+ spaced Know reviews`),
     node('span', '', `${due} ready for spaced review`)
   );
 }
@@ -109,7 +109,7 @@ function renderVocab() {
   head('VOCABULARY · FLIP CARDS', `${deck.completed} of ${deck.total} completed`);
   if (!deck.active.length) {
     add(panel, node('h2', '', spaced ? 'All caught up' : 'Deck complete'), node('p', 'subtitle', spaced ? 'No cards are due right now. Turn off spaced review to practice the full deck.' : 'You finished this practice deck. Start again to review.'));
-    panel.append(button('Practice again', 'primary', () => { startVocabDeck(); render(); }));
+    panel.append(button(spaced ? 'Check due cards' : 'Practice again', 'primary', () => { startVocabDeck(); render(); }));
     return;
   }
   const item = items.find(card => card.id === deck.active[0]);

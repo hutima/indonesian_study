@@ -1,6 +1,6 @@
 # Indonesian Study
 
-An offline-first Indonesian literacy and word-formation study app, adapted from the structure of [Duff Study Tool](https://github.com/hutima/duff_study_tool). It uses flip cards for vocabulary and curated multiple-choice morphology and reading questions. No account, audio, analytics, or external services are required while studying.
+An offline-first Indonesian literacy and word-formation study app, adapted from the structure of [Duff Study Tool](https://github.com/hutima/duff_study_tool). It uses flip cards for vocabulary and curated multiple-choice morphology and reading questions. No account, audio, tracking, or external services are required while studying. Vocabulary review counts stay in your browser.
 
 ## Run locally
 
