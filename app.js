@@ -107,17 +107,26 @@ function renderGuide() {
   if (focus) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', focus));
 }
 function renderWordList() {
-  wordList.hidden = mode !== 'vocabulary' || !lessonIds.length;
-  wordList.querySelector('summary').textContent = `Lesson vocabulary · ${poolVocab().length} words`;
+  wordList.hidden = !lessonIds.length;
+  const cards = poolVocab();
+  const supplemental = cards.filter(card => card.sourceRootId).length;
+  wordList.querySelector('summary').textContent = `Vocabulary list · ${cards.length} words${supplemental ? ` (${supplemental} supplemental)` : ''}`;
   wordListContent.replaceChildren();
   for (const unit of selectedUnits(UNITS, lessonIds)) {
     const group = node('section', 'word-list-group');
     group.append(node('h3', '', `${unit.bookTopic ? `Topik ${unit.bookTopic}` : 'Foundation'} · ${unit.title}`));
-    for (const card of unit.vocabulary) {
-      const row = node('div', 'word-list-row');
-      add(row, node('strong', '', card.form), node('span', '', card.meaning));
-      row.append(node('small', '', `${card.pos} · ${card.register}`));
-      group.append(row);
+    for (const [label, vocabulary] of [
+      ['Lesson words', unit.vocabulary.filter(card => !card.sourceRootId)],
+      ['Supplemental root families', unit.vocabulary.filter(card => card.sourceRootId)]
+    ]) {
+      if (!vocabulary.length) continue;
+      group.append(node('h4', '', label));
+      for (const card of vocabulary) {
+        const row = node('div', 'word-list-row');
+        add(row, node('strong', '', card.form), node('span', '', card.meaning));
+        row.append(node('small', '', `${card.pos} · ${card.register}`));
+        group.append(row);
+      }
     }
     wordListContent.append(group);
   }
@@ -301,7 +310,7 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
-  wordList.hidden = mode !== 'vocabulary' || !lessonIds.length;
+  wordList.hidden = !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
   const items = pool();
