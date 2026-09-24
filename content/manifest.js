@@ -18,11 +18,14 @@ import { topik12 } from './textbook/topik12.js';
 import { topik13 } from './textbook/topik13.js';
 import { topik14 } from './textbook/topik14.js';
 import { topik15 } from './textbook/topik15.js';
+import { PBWL_SUPPLEMENTS } from './vocab/pbwl-supplement.js';
 
 export const FOUNDATION_UNITS = [unit01, unit02, unit03, unit04, unit05];
-export const TEXTBOOK_UNITS = [topik01, topik02, topik03, topik04, topik05, topik06, topik07, topik08, topik09, topik10, topik11, topik12, topik13, topik14, topik15];
+const textbook = [topik01, topik02, topik03, topik04, topik05, topik06, topik07, topik08, topik09, topik10, topik11, topik12, topik13, topik14, topik15];
+export const TEXTBOOK_UNITS = textbook.map(unit => ({ ...unit, vocabulary: [...unit.vocabulary, ...(PBWL_SUPPLEMENTS[unit.bookTopic] || [])] }));
 export const UNITS = [...FOUNDATION_UNITS, ...TEXTBOOK_UNITS];
 export const UNIT_URLS = [
+  './content/vocab/pbwl-supplement.js',
   './content/units/unit01.js',
   './content/units/unit02.js',
   './content/units/unit03.js',
