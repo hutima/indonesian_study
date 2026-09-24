@@ -67,6 +67,11 @@ export function validateContent(units) {
         if (item.unitId !== unit.id) issues.push(`${itemPath}.unitId: must reference ${unit.id}`);
         if (kind === 'vocabulary') {
           for (const key of ['form', 'meaning', 'example']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
+          if (!['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'determiner', 'preposition', 'conjunction', 'modal', 'interrogative', 'interjection'].includes(item.pos)) issues.push(`${itemPath}.pos: expected supported part-of-speech label`);
+          if (!['neutral', 'formal', 'informal'].includes(item.register)) issues.push(`${itemPath}.register: expected neutral, formal, or informal`);
+          if (!['root', 'derived'].includes(item.kind)) issues.push(`${itemPath}.kind: expected root or derived`);
+          if (item.kind === 'derived' && !isNonEmptyString(item.root)) issues.push(`${itemPath}.root: derived vocabulary must identify its root`);
+          if (item.irregular !== undefined && typeof item.irregular !== 'boolean') issues.push(`${itemPath}.irregular: expected boolean when provided`);
         } else if (kind === 'morphology') {
           for (const key of ['form', 'context', 'root', 'process', 'meaning']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
           if (!Array.isArray(item.affixes) || item.affixes.some(affix => !isNonEmptyString(affix))) issues.push(`${itemPath}.affixes: expected array of strings`);

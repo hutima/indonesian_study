@@ -23,6 +23,7 @@
       <select id="unit-select"></select>
       <div id="unit-description" class="unit-description"></div>
       <div id="progress-summary" class="progress-summary"></div>
+      <div id="vocab-analytics" class="vocab-analytics" aria-label="Vocabulary progress"></div>
       <details class="data-tools"><summary>Your progress</summary>
         <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
         <button id="export-button" type="button">Export JSON</button>
@@ -36,10 +37,20 @@
         <button type="button" data-mode="morphology">Morphology</button>
         <button type="button" data-mode="reading">Reading</button>
       </nav>
+      <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary options">
+        <button type="button" id="spaced-toggle" aria-pressed="false">Spaced review: Off</button>
+        <button type="button" id="direction-toggle" aria-pressed="false">Indonesian → English</button>
+        <button type="button" id="shuffle-button">Shuffle</button>
+      </div>
       <div id="study-panel" class="study-panel" aria-live="polite"></div>
     </section>
   </main>
-  <footer>Curated exercises · Works offline after the first complete load · No account or analytics</footer>
+  <footer>Curated exercises · Works offline after the first complete load · No account or tracking</footer>
+  <dialog id="update-dialog" class="update-dialog" aria-labelledby="update-title">
+    <h2 id="update-title">Update available</h2>
+    <p>A new version is ready. Refresh to load the latest words and exercises. Your progress will stay in this browser.</p>
+    <div class="actions"><button type="button" id="update-later" class="secondary">Later</button><button type="button" id="update-now" class="primary">Refresh now</button></div>
+  </dialog>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

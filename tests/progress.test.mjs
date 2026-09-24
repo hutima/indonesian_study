@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadProgress, saveProgress, recordAnswer } from '../progress.js';
+import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab } from '../progress.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -30,4 +30,22 @@ test('imported counters are normalized', () => {
 test('an ID matching an inherited Object property records a finite mark', () => {
   const state = recordAnswer({ version: 1, items: {} }, 'toString', 'correct');
   assert.equal(state.items.toString.correct, 1);
+});
+
+test('spaced Know defers a vocab card, then it becomes due again', () => {
+  const now = 1_700_000_000_000;
+  const state = recordVocabReview({ version: 1, items: {} }, 'id-u01-voc-buku', 'know', true, now);
+  assert.equal(state.items['id-u01-voc-buku'].correct, 1);
+  assert.deepEqual(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 1000), []);
+  assert.equal(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 24 * 60 * 60 * 1000).length, 1);
+});
+
+test('spaced Again makes the card due soon; Unsure uses a shorter delay than Know', () => {
+  const now = 1_700_000_000_000;
+  const first = recordVocabReview({ version: 1, items: {} }, 'id-u02-voc-baca', 'know', true, now);
+  const second = recordVocabReview(first, 'id-u02-voc-baca', 'know', true, now + 24 * 60 * 60 * 1000);
+  const unsure = recordVocabReview(second, 'id-u02-voc-baca', 'unsure', true, now + 2 * 24 * 60 * 60 * 1000);
+  const again = recordVocabReview(second, 'id-u02-voc-baca', 'again', true, now + 2 * 24 * 60 * 60 * 1000);
+  assert.ok(again.items['id-u02-voc-baca'].dueAt < unsure.items['id-u02-voc-baca'].dueAt);
+  assert.ok(unsure.items['id-u02-voc-baca'].dueAt < second.items['id-u02-voc-baca'].dueAt + 7 * 24 * 60 * 60 * 1000);
 });

@@ -1,11 +1,11 @@
 // Offline shell. The app supplies the content module URLs after registration.
-const CACHE = 'indonesian-study-v1';
+const CACHE = 'indonesian-study-v2';
 const SHELL = [
-  './', './index.html', './app.js', './app.css', './progress.js',
+  './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js',
   './content/manifest.js', './manifest.json', './sw.js'
 ];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(Promise.all([
@@ -14,6 +14,7 @@ self.addEventListener('activate', event => {
   ]));
 });
 self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') { event.waitUntil(self.skipWaiting()); return; }
   if (event.data?.type !== 'CACHE_CONTENT') return;
   const urls = event.data.urls;
   const safe = Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && /^\.\/content\/units\/[a-z0-9_-]+\.js$/.test(url));
