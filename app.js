@@ -97,7 +97,7 @@ function head(label, count) {
 
 function renderGuide() {
   const units = selectedUnits(UNITS, lessonIds);
-  const focus = units.length === 1 ? units[0].guide?.[mode] : null;
+  const focus = units.length === 1 ? (units[0].guide?.[mode] || (mode === 'grammar' && units[0].bookTopic ? `Choose the construction that fits the sentence and read why the other options change its meaning.` : null)) : null;
   guide.hidden = !focus;
   guide.replaceChildren();
   if (focus) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', focus));
@@ -157,7 +157,7 @@ function nextItem() {
   render();
 }
 function nextLabel(items) {
-  return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : 'Next form';
+  return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : mode === 'grammar' ? 'Next question' : 'Next form';
 }
 
 const poolVocab = () => itemsForMode(UNITS, lessonIds, 'vocabulary');
@@ -280,6 +280,13 @@ function renderReading(item, items) {
   });
 }
 
+function renderGrammar(item, items) {
+  head('GRAMMAR · IN CONTEXT', countLabel(itemIndex, items.length));
+  panel.append(node('div', 'context', item.context));
+  choices(item, item.id, nextItem);
+  if (chosen === null) panel.append(button(`Skip to ${nextLabel(items).toLowerCase()}`, 'skip-link', nextItem));
+}
+
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
@@ -293,7 +300,8 @@ function render() {
   if (mode === 'morphology') {
     if (stepIndex >= item.steps.length) renderMorphSummary(item, items);
     else renderMorphology(item, items);
-  } else renderReading(item, items);
+  } else if (mode === 'grammar') renderGrammar(item, items);
+  else renderReading(item, items);
 }
 
 document.querySelector('#select-all-topics').addEventListener('click', () => {

@@ -63,6 +63,17 @@ export function validateContent(units) {
         if (!isNonEmptyString(unit.guide?.[mode])) issues.push(`${path}.guide.${mode}: expected lesson focus`);
       }
     }
+    if (unit.bookTopic !== undefined && (!Array.isArray(unit.grammar) || unit.grammar.length < 3)) {
+      issues.push(`${path}.grammar: expected at least three questions for textbook topics`);
+    }
+    if (unit.grammar !== undefined) {
+      if (!Array.isArray(unit.grammar)) issues.push(`${path}.grammar: expected array`);
+      else unit.grammar.forEach((question, index) => {
+        const questionPath = `${path}.grammar[${index}]`;
+        checkQuestion(question, questionPath, unit.id, ids, issues);
+        if (!isNonEmptyString(question?.context)) issues.push(`${questionPath}.context: expected an original contextual sentence`);
+      });
+    }
     for (const kind of ['vocabulary', 'morphology', 'readings']) {
       if (!Array.isArray(unit[kind])) {
         issues.push(`${path}.${kind}: expected array`);

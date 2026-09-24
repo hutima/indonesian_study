@@ -31,7 +31,18 @@ test('curated units have unique stable IDs and complete vocabulary and question 
     assert.ok(unit.vocabulary.length >= 20);
     assert.ok(unit.readings.every(reading => reading.questions.length >= 2));
     assert.ok(unit.vocabulary.every(card => card.pos && card.register && card.kind));
+    assert.ok(unit.grammar.length >= 3);
+    assert.ok(unit.grammar.every(question => question.unitId === unit.id));
   }
+});
+
+test('validator rejects grammar answers missing from choices and duplicate question IDs', () => {
+  const units = structuredClone(UNITS);
+  units[5].grammar[0].answer = 'not an option';
+  units[5].grammar[1].id = units[5].grammar[0].id;
+  const issues = validateContent(units);
+  assert.ok(issues.some(issue => issue.includes('.grammar[0].answer')));
+  assert.ok(issues.some(issue => issue.includes('Duplicate ID')));
 });
 
 test('validator rejects duplicate IDs and incorrect answer choice sets', () => {
