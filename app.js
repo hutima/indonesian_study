@@ -1,11 +1,12 @@
 import { UNITS, UNIT_URLS } from './content/manifest.js';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab } from './progress.js';
 import { createDeck, markDeck } from './vocab-deck.js';
+import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
+import { advanceSelection } from './navigation.js';
 
 const panel = document.querySelector('#study-panel');
 const select = document.querySelector('#unit-select');
 const description = document.querySelector('#unit-description');
-const summary = document.querySelector('#progress-summary');
 const status = document.querySelector('#offline-status');
 const analytics = document.querySelector('#vocab-analytics');
 const toolbar = document.querySelector('#vocab-toolbar');
@@ -19,7 +20,7 @@ let stepIndex = 0;
 let revealed = false;
 let chosen = null;
 let translationShown = false;
-let spaced = false;
+let spaced = true;
 let reverse = false;
 let deck;
 
@@ -45,22 +46,42 @@ function saveMark(id, result) {
 }
 
 function renderProgress() {
-  const all = UNITS.flatMap(unit => [...unit.vocabulary, ...unit.morphology, ...unit.readings.flatMap(reading => reading.questions)]);
-  const seen = all.filter(item => {
-    if (item.steps) return item.steps.some((_, index) => progress.items[`${item.id}.s${index + 1}`]);
-    return !!progress.items[item.id];
-  }).length;
-  summary.replaceChildren(add(node('strong', '', `${seen} / ${all.length}`), document.createTextNode('items practiced across all units')));
   const cards = poolVocab();
   const reviewed = cards.filter(card => progress.items[card.id]);
   const mastered = reviewed.filter(card => (progress.items[card.id].streak || 0) >= 3).length;
   const due = dueVocab(cards, progress).length;
   analytics.replaceChildren(
-    node('strong', '', 'Vocabulary'),
-    node('span', '', `${reviewed.length} / ${cards.length} practiced`),
-    node('span', '', `${mastered} at 3+ spaced Know reviews`),
-    node('span', '', `${due} ready for spaced review`)
+    node('strong', '', 'Vocabulary review'),
+    node('span', '', `${reviewed.length} practiced · ${mastered} with 3+ Know reviews · ${due} due`),
+    buildDueHistogram(cards, progress),
+    buildConfidenceHistogram(cards, progress)
   );
+}
+
+function histogram(title, counts, labels) {
+  const details = node('details', 'histogram');
+  details.open = title === 'Due by day';
+  const summary = node('summary', '', title);
+  const bars = node('div', 'histogram-bars');
+  const last = Math.max(2, counts.findLastIndex(n => n > 0));
+  const max = Math.max(...counts, 1);
+  counts.slice(0, last + 1).forEach((value, index) => {
+    const column = node('div', 'histogram-column');
+    column.title = `${labels[index]}: ${value} cards`;
+    add(column, node('span', 'histogram-count', value || ''), node('span', 'histogram-bar'));
+    column.querySelector('.histogram-bar').style.height = `${Math.max(3, Math.round(value / max * 56))}px`;
+    column.append(node('span', 'histogram-label', labels[index]));
+    bars.append(column);
+  });
+  details.append(summary, bars);
+  return details;
+}
+function buildDueHistogram(cards, state) {
+  const labels = ['now', 'today', ...Array.from({length:13}, (_, i) => `${i + 1}d`), '14d+'];
+  return histogram('Due by day', dueBuckets(cards, state), labels);
+}
+function buildConfidenceHistogram(cards, state) {
+  return histogram('Recognition confidence', confidenceBuckets(cards, state), ['new', '0–19', '20–39', '40–59', '60–79', '80–100']);
 }
 
 function head(label, count) {
@@ -70,7 +91,15 @@ function head(label, count) {
 }
 
 function nextItem() {
-  itemIndex = (itemIndex + 1) % pool().length;
+  const items = pool();
+  const next = advanceSelection(itemIndex, items.length, unitIndex, UNITS.length);
+  if (next.unitIndex !== unitIndex) {
+    itemIndex = next.index;
+    unitIndex = next.unitIndex;
+    select.value = String(unitIndex);
+    description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.';
+    renderProgress();
+  } else itemIndex = next.index;
   stepIndex = 0; chosen = null; revealed = false; translationShown = false;
   render();
 }
@@ -83,7 +112,7 @@ function startVocabDeck() {
 function markVocab(id, rating) {
   progress = recordVocabReview(progress, id, rating, spaced);
   saveProgress(localStorage, progress);
-  deck = markDeck(deck, spaced && rating === 'again' ? 'unsure' : rating);
+  deck = markDeck(deck, spaced && rating === 'again' && progress.items[id].leechDrill ? 'unsure' : rating);
   revealed = false;
   renderProgress(); render();
 }
@@ -101,7 +130,7 @@ function flipCard() {
   card.classList.toggle('flipped', revealed);
   card.setAttribute('aria-pressed', String(revealed));
   card.setAttribute('aria-label', `${revealed ? 'Hide' : 'Show'} ${reverse ? 'Indonesian' : 'English'} meaning`);
-  document.querySelectorAll('.review-actions button').forEach(action => { action.disabled = !revealed; });
+
 }
 function renderVocab() {
   const items = poolVocab();
@@ -114,7 +143,7 @@ function renderVocab() {
   }
   const item = items.find(card => card.id === deck.active[0]);
   if (!item) { startVocabDeck(); render(); return; }
-  panel.append(node('p', 'card-instruction', 'Tap the card to flip · Space or Enter also flips'));
+  panel.append(node('p', 'card-instruction', 'Tap to flip · Space or Enter · Rate from either side'));
   const card = button('', `flashcard${revealed ? ' flipped' : ''}`, flipCard);
   card.setAttribute('aria-label', `${revealed ? 'Hide' : 'Show'} ${reverse ? 'Indonesian' : 'English'} for ${reverse ? item.meaning : item.form}`);
   card.setAttribute('aria-pressed', String(revealed));
@@ -128,13 +157,12 @@ function renderVocab() {
   if (item.note) back.append(node('span', 'card-note', item.note));
   inner.append(front, back); card.append(inner); panel.append(card);
   const actions = node('div', 'actions review-actions');
-  for (const [label, rating, hint] of [['Again', 'again', '1'], ['Unsure', 'unsure', '2'], ['Know', 'know', '3']]) {
+  for (const [label, rating, hint] of [['Again', 'again', '1'], ['Unsure', 'unsure', '2'], ['Next (Know)', 'know', '3']]) {
     const action = button(`${label}  ${hint}`, rating === 'know' ? 'primary' : 'secondary', () => markVocab(item.id, rating));
-    action.disabled = !revealed;
     actions.append(action);
   }
   panel.append(actions);
-  panel.append(node('p', 'review-hint', spaced ? 'Again: 5 min · Unsure: 6 hr · Know: 1 day, then longer intervals' : 'Again returns later in this deck · Unsure and Know complete this round'));
+  panel.append(node('p', 'review-hint', spaced ? 'Duff 8-month SRS · Again: requeue · Unsure: 2 hr · Know: from 22 hr' : 'Again returns later in this deck · Unsure and Know complete this round'));
 }
 
 function choices(question, progressId, next) {
@@ -169,6 +197,7 @@ function renderMorphology(item, items) {
     if (stepIndex + 1 < item.steps.length) { stepIndex++; render(); }
     else { stepIndex = item.steps.length; render(); }
   });
+  panel.append(button(itemIndex === items.length - 1 && unitIndex < UNITS.length - 1 ? 'Skip to next unit' : 'Skip to next form', 'skip-link', nextItem));
 }
 
 function renderMorphSummary(item, items) {
@@ -178,7 +207,7 @@ function renderMorphSummary(item, items) {
   for (const [key, value] of [['Root', item.root], ['Affixes', item.affixes.length ? item.affixes.join(' + ') : 'none'], ['Affix effect / form', item.process], ['In context', item.meaning]]) {
     add(details, node('dt', '', key), node('dd', '', value));
   }
-  panel.append(details, button('Next form', 'primary', nextItem));
+  panel.append(details, button(itemIndex === items.length - 1 && unitIndex < UNITS.length - 1 ? 'Next unit' : 'Next form', 'primary', nextItem));
 }
 
 function renderReading(item, items) {
@@ -247,12 +276,27 @@ document.querySelector('#shuffle-button').addEventListener('click', () => {
 });
 document.addEventListener('keydown', event => {
   if (mode !== 'vocabulary' || !deck?.active.length || event.altKey || event.ctrlKey || event.metaKey) return;
-  if (event.target.closest('button, input, select, textarea, summary, dialog')) return;
-  if (event.code === 'Space' || event.code === 'Enter') { event.preventDefault(); flipCard(); }
-  if (revealed && ['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
+  if (event.target.closest('input, select, textarea, dialog')) return;
+  if (['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
     event.preventDefault(); markVocab(deck.active[0], { Digit1: 'again', Digit2: 'unsure', Digit3: 'know' }[event.code]);
+    return;
   }
+  if (event.target.closest('button, summary')) return;
+  if (event.code === 'Space' || event.code === 'Enter') { event.preventDefault(); flipCard(); }
 });
+const themeSelect = document.querySelector('#theme-select');
+const THEME_KEY = 'indonesian-study-theme';
+let theme = ['system','light','dark'].includes(localStorage.getItem(THEME_KEY)) ? localStorage.getItem(THEME_KEY) : 'system';
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+  const dark = theme === 'dark' || theme === 'system' && systemTheme.matches;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#29141c' : '#63303a';
+  themeSelect.value = theme;
+}
+themeSelect.addEventListener('change', () => { theme = themeSelect.value; localStorage.setItem(THEME_KEY, theme); applyTheme(); });
+systemTheme.addEventListener?.('change', applyTheme);
+applyTheme();
 renderProgress(); updateUnit();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -283,6 +327,8 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     });
     const checkForUpdate = () => { registration.update().then(() => showUpdate(registration)).catch(() => {}); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+    window.addEventListener('pageshow', checkForUpdate);
+    window.addEventListener('focus', checkForUpdate);
     checkForUpdate();
     const active = (await navigator.serviceWorker.ready).active;
     if (!active) return;

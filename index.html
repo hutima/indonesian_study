@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#173d3a">
+  <meta name="theme-color" content="#63303a">
   <meta name="description" content="Offline Indonesian vocabulary, morphology, and graded reading practice.">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./app.css">
@@ -22,7 +22,6 @@
       <label for="unit-select">Practice unit</label>
       <select id="unit-select"></select>
       <div id="unit-description" class="unit-description"></div>
-      <div id="progress-summary" class="progress-summary"></div>
       <div id="vocab-analytics" class="vocab-analytics" aria-label="Vocabulary progress"></div>
       <details class="data-tools"><summary>Your progress</summary>
         <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
@@ -38,9 +37,10 @@
         <button type="button" data-mode="reading">Reading</button>
       </nav>
       <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary options">
-        <button type="button" id="spaced-toggle" aria-pressed="false">Spaced review: Off</button>
+        <button type="button" id="spaced-toggle" aria-pressed="true">Spaced review: On</button>
         <button type="button" id="direction-toggle" aria-pressed="false">Indonesian → English</button>
         <button type="button" id="shuffle-button">Shuffle</button>
+        <label class="theme-label" for="theme-select">Theme</label><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
       </div>
       <div id="study-panel" class="study-panel" aria-live="polite"></div>
     </section>
