@@ -52,6 +52,11 @@ export function validateContent(units) {
       if (!isNonEmptyString(unit[key])) issues.push(`${path}.${key}: expected non-empty string`);
     }
     if (!Number.isInteger(unit.level) || unit.level < 1) issues.push(`${path}.level: expected positive integer`);
+    if (unit.guide !== undefined) {
+      for (const mode of ['vocabulary', 'morphology', 'reading']) {
+        if (!isNonEmptyString(unit.guide?.[mode])) issues.push(`${path}.guide.${mode}: expected lesson focus`);
+      }
+    }
     for (const kind of ['vocabulary', 'morphology', 'readings']) {
       if (!Array.isArray(unit[kind])) {
         issues.push(`${path}.${kind}: expected array`);
@@ -67,7 +72,7 @@ export function validateContent(units) {
         if (item.unitId !== unit.id) issues.push(`${itemPath}.unitId: must reference ${unit.id}`);
         if (kind === 'vocabulary') {
           for (const key of ['form', 'meaning', 'example']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
-          if (!['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'determiner', 'preposition', 'conjunction', 'modal', 'interrogative', 'interjection'].includes(item.pos)) issues.push(`${itemPath}.pos: expected supported part-of-speech label`);
+          if (!['noun', 'verb', 'adjective', 'adverb', 'pronoun', 'determiner', 'preposition', 'conjunction', 'modal', 'interrogative', 'interjection', 'particle'].includes(item.pos)) issues.push(`${itemPath}.pos: expected supported part-of-speech label`);
           if (!['neutral', 'formal', 'informal'].includes(item.register)) issues.push(`${itemPath}.register: expected neutral, formal, or informal`);
           if (!['root', 'derived'].includes(item.kind)) issues.push(`${itemPath}.kind: expected root or derived`);
           if (item.kind === 'derived' && !isNonEmptyString(item.root)) issues.push(`${itemPath}.root: derived vocabulary must identify its root`);

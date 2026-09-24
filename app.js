@@ -7,6 +7,7 @@ import { advanceSelection } from './navigation.js';
 const panel = document.querySelector('#study-panel');
 const select = document.querySelector('#unit-select');
 const description = document.querySelector('#unit-description');
+const guide = document.querySelector('#lesson-guide');
 const status = document.querySelector('#offline-status');
 const analytics = document.querySelector('#vocab-analytics');
 const toolbar = document.querySelector('#vocab-toolbar');
@@ -90,6 +91,12 @@ function head(label, count) {
   panel.append(header);
 }
 
+function renderGuide() {
+  const text = UNITS[unitIndex].guide?.[mode];
+  guide.hidden = !text;
+  guide.replaceChildren();
+  if (text) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', text));
+}
 function nextItem() {
   const items = pool();
   const next = advanceSelection(itemIndex, items.length, unitIndex, UNITS.length);
@@ -98,7 +105,7 @@ function nextItem() {
     unitIndex = next.unitIndex;
     select.value = String(unitIndex);
     description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.';
-    renderProgress();
+    renderProgress(); renderGuide();
   } else itemIndex = next.index;
   stepIndex = 0; chosen = null; revealed = false; translationShown = false;
   render();
@@ -240,12 +247,12 @@ function render() {
 
 UNITS.forEach((unit, index) => { const option = node('option', '', `${index + 1}. ${unit.title}`); option.value = String(index); select.append(option); });
 select.value = String(unitIndex);
-function updateUnit() { description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.'; itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; startVocabDeck(); renderProgress(); render(); }
+function updateUnit() { description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.'; renderGuide(); itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; startVocabDeck(); renderProgress(); render(); }
 select.addEventListener('change', () => { unitIndex = Number(select.value); updateUnit(); });
 document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('click', () => {
   mode = tab.dataset.mode;
   document.querySelectorAll('[data-mode]').forEach(other => { if (other === tab) other.setAttribute('aria-current', 'page'); else other.removeAttribute('aria-current'); });
-  itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; render();
+  itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; renderGuide(); render();
 }));
 document.querySelector('#export-button').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(progress, null, 2)], { type: 'application/json' }));

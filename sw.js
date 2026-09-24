@@ -1,5 +1,5 @@
 // Offline shell. The app supplies the content module URLs after registration.
-const CACHE = 'indonesian-study-v3';
+const CACHE = 'indonesian-study-v4';
 const SHELL = [
   './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './navigation.js',
   './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',
