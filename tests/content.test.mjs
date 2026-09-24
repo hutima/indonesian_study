@@ -9,7 +9,7 @@ test('curated units have unique stable IDs and complete vocabulary and question 
   assert.equal(FOUNDATION_UNITS.length, 5);
   assert.equal(TEXTBOOK_UNITS.length, 15);
   assert.equal(UNITS.length, 20);
-  assert.equal(UNIT_URLS.length, UNITS.length);
+  assert.equal(UNIT_URLS.length, UNITS.length + 1); // one shared vocabulary supplement module
   assert.deepEqual(TEXTBOOK_UNITS.map(unit => unit.bookTopic), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const unit of UNITS) {
     assert.ok(unit.vocabulary.length > 0);
@@ -34,6 +34,9 @@ test('curated units have unique stable IDs and complete vocabulary and question 
     assert.ok(unit.grammar.length >= 3);
     assert.ok(unit.grammar.every(question => question.unitId === unit.id));
   }
+  const supplemented = TEXTBOOK_UNITS.flatMap(unit => unit.vocabulary.filter(card => card.sourceRootId));
+  assert.ok(supplemented.length >= 40);
+  assert.ok(supplemented.every(card => Number.isInteger(card.sourceRootId) && card.example.toLowerCase().includes(card.form.toLowerCase())));
 });
 
 test('validator rejects grammar answers missing from choices and duplicate question IDs', () => {

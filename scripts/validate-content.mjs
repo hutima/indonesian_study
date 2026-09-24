@@ -94,6 +94,7 @@ export function validateContent(units) {
           if (!['root', 'derived'].includes(item.kind)) issues.push(`${itemPath}.kind: expected root or derived`);
           if (item.kind === 'derived' && !isNonEmptyString(item.root)) issues.push(`${itemPath}.root: derived vocabulary must identify its root`);
           if (item.irregular !== undefined && typeof item.irregular !== 'boolean') issues.push(`${itemPath}.irregular: expected boolean when provided`);
+          if (item.sourceRootId !== undefined && (!Number.isInteger(item.sourceRootId) || item.sourceRootId < 1)) issues.push(`${itemPath}.sourceRootId: expected a positive PBWL RootID`);
         } else if (kind === 'morphology') {
           for (const key of ['form', 'context', 'root', 'process', 'meaning']) if (!isNonEmptyString(item[key])) issues.push(`${itemPath}.${key}: expected non-empty string`);
           if (!Array.isArray(item.affixes) || item.affixes.some(affix => !isNonEmptyString(affix))) issues.push(`${itemPath}.affixes: expected array of strings`);
