@@ -1,13 +1,16 @@
-import { UNITS, UNIT_URLS } from './content/manifest.js';
+import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab } from './progress.js';
 import { createDeck, markDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
-import { advanceSelection } from './navigation.js';
+import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 
 const panel = document.querySelector('#study-panel');
-const select = document.querySelector('#unit-select');
+const lessonGrid = document.querySelector('#lesson-grid');
+const foundationGrid = document.querySelector('#foundation-grid');
 const description = document.querySelector('#unit-description');
 const guide = document.querySelector('#lesson-guide');
+const wordList = document.querySelector('#word-list');
+const wordListContent = document.querySelector('#word-list-content');
 const status = document.querySelector('#offline-status');
 const analytics = document.querySelector('#vocab-analytics');
 const toolbar = document.querySelector('#vocab-toolbar');
@@ -15,7 +18,9 @@ const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 let progress = loadProgress(localStorage);
 let mode = 'vocabulary';
-let unitIndex = UNITS.length - 1;
+let lessonIds;
+try { lessonIds = normalizeLessonIds(JSON.parse(localStorage.getItem(SELECTION_KEY) || 'null'), UNITS, [TEXTBOOK_UNITS[0].id]); }
+catch { lessonIds = [TEXTBOOK_UNITS[0].id]; }
 let itemIndex = 0;
 let stepIndex = 0;
 let revealed = false;
@@ -36,8 +41,7 @@ const button = (label, className, action) => {
   const element = node('button', className, label);
   element.type = 'button'; element.addEventListener('click', action); return element;
 };
-const pool = () => UNITS.slice(0, unitIndex + 1).flatMap(unit => unit[mode] || (mode === 'reading' ? unit.readings : []));
-const startOfSelectedUnit = () => UNITS.slice(0, unitIndex).reduce((sum, unit) => sum + (mode === 'reading' ? unit.readings.length : unit[mode].length), 0);
+const pool = () => itemsForMode(UNITS, lessonIds, mode);
 const countLabel = (index, total) => `${index + 1} of ${total}`;
 
 function saveMark(id, result) {
@@ -92,26 +96,71 @@ function head(label, count) {
 }
 
 function renderGuide() {
-  const text = UNITS[unitIndex].guide?.[mode];
-  guide.hidden = !text;
+  const units = selectedUnits(UNITS, lessonIds);
+  const focus = units.length === 1 ? units[0].guide?.[mode] : null;
+  guide.hidden = !focus;
   guide.replaceChildren();
-  if (text) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', text));
+  if (focus) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', focus));
+}
+function renderWordList() {
+  wordList.hidden = mode !== 'vocabulary' || !lessonIds.length;
+  wordList.querySelector('summary').textContent = `Lesson vocabulary · ${poolVocab().length} words`;
+  wordListContent.replaceChildren();
+  for (const unit of selectedUnits(UNITS, lessonIds)) {
+    const group = node('section', 'word-list-group');
+    group.append(node('h3', '', `${unit.bookTopic ? `Topik ${unit.bookTopic}` : 'Foundation'} · ${unit.title}`));
+    for (const card of unit.vocabulary) {
+      const row = node('div', 'word-list-row');
+      add(row, node('strong', '', card.form), node('span', '', card.meaning));
+      row.append(node('small', '', `${card.pos} · ${card.register}`));
+      group.append(row);
+    }
+    wordListContent.append(group);
+  }
+}
+function describeSelection() {
+  const units = selectedUnits(UNITS, lessonIds);
+  description.textContent = !units.length ? 'Choose at least one lesson to begin.'
+    : units.length === 1 ? units[0].description
+    : `${units.length} lessons selected. Practice combines their exercises in book order.`;
+}
+function renderLessonSelector() {
+  for (const [grid, units] of [[lessonGrid, TEXTBOOK_UNITS], [foundationGrid, FOUNDATION_UNITS]]) {
+    grid.replaceChildren();
+    for (const unit of units) {
+      const selected = lessonIds.includes(unit.id);
+      const name = unit.bookTopic ? `Topik ${unit.bookTopic}` : `Foundation ${unit.level}`;
+      const tile = button('', 'lesson-tile' + (selected ? ' selected' : ''), () => {
+        lessonIds = selected ? lessonIds.filter(id => id !== unit.id) : normalizeLessonIds([...lessonIds, unit.id], UNITS);
+        saveLessonSelection();
+      });
+      tile.setAttribute('aria-pressed', String(selected));
+      add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', `${unit.vocabulary.length} words · ${unit.morphology.length} forms`));
+      grid.append(tile);
+    }
+  }
+}
+function saveLessonSelection() {
+  localStorage.setItem(SELECTION_KEY, JSON.stringify(lessonIds));
+  renderLessonSelector(); describeSelection(); renderGuide(); renderWordList();
+  itemIndex = 0; stepIndex = 0; chosen = null; translationShown = false;
+  startVocabDeck(); renderProgress(); render();
 }
 function nextItem() {
   const items = pool();
-  const next = advanceSelection(itemIndex, items.length, unitIndex, UNITS.length);
-  if (next.unitIndex !== unitIndex) {
-    itemIndex = next.index;
-    unitIndex = next.unitIndex;
-    select.value = String(unitIndex);
-    description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.';
-    renderProgress(); renderGuide();
-  } else itemIndex = next.index;
+  if (itemIndex >= items.length - 1) {
+    const nextId = nextLessonId(UNITS, lessonIds);
+    if (nextId) { lessonIds = [nextId]; saveLessonSelection(); return; }
+  }
+  itemIndex = (itemIndex + 1) % items.length;
   stepIndex = 0; chosen = null; revealed = false; translationShown = false;
   render();
 }
+function nextLabel(items) {
+  return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : 'Next form';
+}
 
-const poolVocab = () => UNITS.slice(0, unitIndex + 1).flatMap(unit => unit.vocabulary);
+const poolVocab = () => itemsForMode(UNITS, lessonIds, 'vocabulary');
 function startVocabDeck() {
   deck = createDeck(poolVocab(), progress, spaced);
   revealed = false;
@@ -141,6 +190,7 @@ function flipCard() {
 }
 function renderVocab() {
   const items = poolVocab();
+  if (!items.length) { panel.append(node('p', 'empty', 'Select a textbook lesson or foundation set to begin.')); return; }
   if (!deck) startVocabDeck();
   head('VOCABULARY · FLIP CARDS', `${deck.completed} of ${deck.total} completed`);
   if (!deck.active.length) {
@@ -204,7 +254,7 @@ function renderMorphology(item, items) {
     if (stepIndex + 1 < item.steps.length) { stepIndex++; render(); }
     else { stepIndex = item.steps.length; render(); }
   });
-  panel.append(button(itemIndex === items.length - 1 && unitIndex < UNITS.length - 1 ? 'Skip to next unit' : 'Skip to next form', 'skip-link', nextItem));
+  panel.append(button(`Skip to ${nextLabel(items).toLowerCase()}`, 'skip-link', nextItem));
 }
 
 function renderMorphSummary(item, items) {
@@ -214,7 +264,7 @@ function renderMorphSummary(item, items) {
   for (const [key, value] of [['Root', item.root], ['Affixes', item.affixes.length ? item.affixes.join(' + ') : 'none'], ['Affix effect / form', item.process], ['In context', item.meaning]]) {
     add(details, node('dt', '', key), node('dd', '', value));
   }
-  panel.append(details, button(itemIndex === items.length - 1 && unitIndex < UNITS.length - 1 ? 'Next unit' : 'Next form', 'primary', nextItem));
+  panel.append(details, button(nextLabel(items), 'primary', nextItem));
 }
 
 function renderReading(item, items) {
@@ -233,6 +283,7 @@ function renderReading(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
+  wordList.hidden = mode !== 'vocabulary' || !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
   const items = pool();
@@ -245,14 +296,16 @@ function render() {
   } else renderReading(item, items);
 }
 
-UNITS.forEach((unit, index) => { const option = node('option', '', `${index + 1}. ${unit.title}`); option.value = String(index); select.append(option); });
-select.value = String(unitIndex);
-function updateUnit() { description.textContent = UNITS[unitIndex].description + ' Includes earlier units for review.'; renderGuide(); itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; startVocabDeck(); renderProgress(); render(); }
-select.addEventListener('change', () => { unitIndex = Number(select.value); updateUnit(); });
+document.querySelector('#select-all-topics').addEventListener('click', () => {
+  lessonIds = normalizeLessonIds([...lessonIds, ...TEXTBOOK_UNITS.map(unit => unit.id)], UNITS);
+  saveLessonSelection();
+});
+document.querySelector('#clear-lessons').addEventListener('click', () => { lessonIds = []; saveLessonSelection(); });
 document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('click', () => {
   mode = tab.dataset.mode;
   document.querySelectorAll('[data-mode]').forEach(other => { if (other === tab) other.setAttribute('aria-current', 'page'); else other.removeAttribute('aria-current'); });
-  itemIndex = startOfSelectedUnit(); stepIndex = 0; chosen = null; revealed = false; translationShown = false; renderGuide(); render();
+  itemIndex = 0; stepIndex = 0; chosen = null; revealed = false; translationShown = false;
+  renderGuide(); renderWordList(); render();
 }));
 document.querySelector('#export-button').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(progress, null, 2)], { type: 'application/json' }));
@@ -304,7 +357,7 @@ function applyTheme() {
 themeSelect.addEventListener('change', () => { theme = themeSelect.value; localStorage.setItem(THEME_KEY, theme); applyTheme(); });
 systemTheme.addEventListener?.('change', applyTheme);
 applyTheme();
-renderProgress(); updateUnit();
+renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); startVocabDeck(); renderProgress(); render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const dialog = document.querySelector('#update-dialog');

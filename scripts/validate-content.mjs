@@ -41,6 +41,7 @@ export function validateContent(units) {
   const issues = [];
   if (!Array.isArray(units) || units.length === 0) return ['manifest: expected a non-empty array of units'];
   const ids = new Set();
+  const bookTopics = new Set();
   for (const [unitIndex, unit] of units.entries()) {
     const path = `units[${unitIndex}]`;
     if (!unit || typeof unit !== 'object') {
@@ -52,6 +53,11 @@ export function validateContent(units) {
       if (!isNonEmptyString(unit[key])) issues.push(`${path}.${key}: expected non-empty string`);
     }
     if (!Number.isInteger(unit.level) || unit.level < 1) issues.push(`${path}.level: expected positive integer`);
+    if (unit.bookTopic !== undefined) {
+      if (!Number.isInteger(unit.bookTopic) || unit.bookTopic < 1 || unit.bookTopic > 15) issues.push(`${path}.bookTopic: expected Topik number 1–15`);
+      if (bookTopics.has(unit.bookTopic)) issues.push(`${path}.bookTopic: duplicate textbook lesson`);
+      bookTopics.add(unit.bookTopic);
+    }
     if (unit.guide !== undefined) {
       for (const mode of ['vocabulary', 'morphology', 'reading']) {
         if (!isNonEmptyString(unit.guide?.[mode])) issues.push(`${path}.guide.${mode}: expected lesson focus`);
