@@ -41,10 +41,28 @@ test('service worker caches the shell and every registered content unit for offl
   await prefetch;
   assert.equal(ready, true);
 
-  for (const path of ['./index.html', './app.js', './progress.js', './content/manifest.js', ...UNIT_URLS]) {
+  for (const path of ['./index.html', './app.js', './progress.js', './vocab-deck.js', './content/manifest.js', ...UNIT_URLS]) {
     let response;
     const request = { url: new URL(path, pagesBase).href, method: 'GET' };
     handlers.get('fetch')({ request, respondWith: promise => { response = promise; }, waitUntil: () => {} });
     assert.ok(await response, `offline cache misses ${path}`);
   }
+});
+
+
+test('an installed update waits for an explicit refresh request', async () => {
+  const handlers = new Map();
+  let skipCalls = 0;
+  const caches = { open: async () => ({ addAll: async () => {} }) };
+  const self = { addEventListener: (type, fn) => handlers.set(type, fn), skipWaiting: async () => { skipCalls++; } };
+  const script = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
+  vm.runInNewContext(script, { self, caches });
+  let install;
+  handlers.get('install')({ waitUntil: promise => { install = promise; } });
+  await install;
+  assert.equal(skipCalls, 0);
+  let requested;
+  handlers.get('message')({ data: { type: 'SKIP_WAITING' }, waitUntil: promise => { requested = promise; } });
+  await requested;
+  assert.equal(skipCalls, 1);
 });
