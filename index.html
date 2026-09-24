@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d3a">
+  <meta name="description" content="Offline Indonesian vocabulary, morphology, and graded reading practice.">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./app.css">
+  <title>Indonesian Study</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">ID</span><span>Indonesian Study<small>Words, forms, and reading</small></span></div>
+    <span id="offline-status" class="offline-status">Preparing offline access…</span>
+  </header>
+  <main class="layout">
+    <aside class="sidebar">
+      <p class="eyebrow">STUDY PATH</p>
+      <h1>Read with confidence.</h1>
+      <p>Recognize a root, see how its form changes, then meet it in a short passage.</p>
+      <label for="unit-select">Practice unit</label>
+      <select id="unit-select"></select>
+      <div id="unit-description" class="unit-description"></div>
+      <div id="progress-summary" class="progress-summary"></div>
+      <details class="data-tools"><summary>Your progress</summary>
+        <p>Progress stays in this browser. Export a backup before clearing browser data.</p>
+        <button id="export-button" type="button">Export JSON</button>
+        <label class="import-label" for="import-file">Import JSON</label><input id="import-file" type="file" accept="application/json,.json">
+        <button id="reset-button" type="button" class="quiet">Reset progress</button>
+      </details>
+    </aside>
+    <section class="workspace" aria-label="Study area">
+      <nav class="tabs" aria-label="Study mode">
+        <button type="button" data-mode="vocabulary" aria-current="page">Vocabulary</button>
+        <button type="button" data-mode="morphology">Morphology</button>
+        <button type="button" data-mode="reading">Reading</button>
+      </nav>
+      <div id="study-panel" class="study-panel" aria-live="polite"></div>
+    </section>
+  </main>
+  <footer>Curated exercises · Works offline after the first complete load · No account or analytics</footer>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

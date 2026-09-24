@@ -1,0 +1,4199 @@
+// ═══════════════════════════════════════════════════════
+//  GREEK FLASHCARDS — Modular Entry Point
+// ═══════════════════════════════════════════════════════
+//
+// ┌─ LLM ORIENTATION ─ READ FIRST ──────────────────────────────────────┐
+// │                                                                     │
+// │ This file (main.js) is the entry point + glue. Most logic lives in  │
+// │ modules under js/ui/, js/state/, and js/domain/. For most changes   │
+// │ you do NOT need to load this file — load the relevant module(s)     │
+// │ and js/state/runtime.js, that's it. See the task-to-files map below.│
+// │                                                                     │
+// │ STATE                                                               │
+// │   All cross-module state lives in js/state/runtime.js as a single   │
+// │   mutable `runtime` object. Modules `import { runtime }` and        │
+// │   mutate properties directly (runtime.deck = ..., runtime.marks[id] │
+// │   = 'known'). main.js does NOT own any module-level state.          │
+// │                                                                     │
+// │ WIRING                                                              │
+// │   This file imports each module, then calls configure*(deps) at the │
+// │   top to inject host callbacks the module needs. New host callbacks │
+// │   go in the matching configure* block; new modules add their own    │
+// │   configure call here. GLOBAL_CLICK_HANDLERS at the bottom is the   │
+// │   onclick="..." surface used by index.html — every name there must  │
+// │   resolve to either a local function or a named import.             │
+// │                                                                     │
+// │ MODULE MAP (load these, not this file, for the matching task)       │
+// │   js/state/runtime.js       all shared mutable state                │
+// │   js/state/persistence.js   save/restore, JSON export/import,       │
+// │                             Transfer modal, deck-state bank         │
+// │   js/state/store.js         storage keys, gamification sanitize     │
+// │   js/state/migrations.js    versioned state migrations              │
+// │   js/domain/srs/*           SRS scheduler, confidence, constants    │
+// │   js/domain/deck/*          deck ordering + filters (pure)          │
+// │   js/domain/gamification/   XP math, levels, usage-stats primitives │
+// │   js/domain/grammar/        grammar-support HTML                    │
+// │   js/ui/reader.js           Reader tab (drills + verses)            │
+// │   js/ui/keyboard.js         keyboard shortcuts                      │
+// │   js/ui/toast.js            level-up / badge toast queue            │
+// │   js/ui/touchTapBridge.js   iOS synthetic-tap polyfill              │
+// │   js/ui/modals.js           disclaimer, what's new, study selector, │
+// │                             shortcuts, analytics open/close,        │
+// │                             startStudying, isXxxOpen predicates     │
+// │   js/ui/charts.js           pure SVG/HTML builders (histogram,      │
+// │                             line, heatmap, ring, word stat card)    │
+// │   js/ui/progress.js         progress bar + Review panel +           │
+// │                             returnSeenCardToDeck                    │
+// │   js/ui/render.js           renderCard, flipCard (vocab + grammar)  │
+// │   js/ui/selectors.js        Study Selector overlay + load flow      │
+// │                             (buildSessions/Chapter/Suppl/Advanced,  │
+// │                             toggle/deselect, loadDeckFromKeys)      │
+// │   js/ui/navigation.js       navigate, markCard, setStudyMode,       │
+// │                             toggles (shuffle/required/direction/    │
+// │                             spaced/morphSelfCheck), reshuffle,      │
+// │                             fastForward, resetCurrentDeck,          │
+// │                             resetAllStats                           │
+// │   js/ui/analytics.js        renderAnalyticsOverlay + ~16 helpers,   │
+// │                             runtime-bound XP wrappers, celebrate-   │
+// │                             on-level-up/badge plumbing              │
+// │   js/utils/*                helpers, time, storage, Greek sort      │
+// │   js/logic/pos_logic.js     parsing helpers                         │
+// │                                                                     │
+// │ WHAT STAYS IN main.js (you only need this file for these)           │
+// │   - Theme bootstrap (resolve/applyThemeMode, sync*Buttons, init)    │
+// │   - Usage tracking (accumulate*, noteStudyInteraction,              │
+// │     startUsageTracking, updateUsageMeta)                            │
+// │   - Deck primitives: buildStudyDeck, applySpacedReview,             │
+// │     getDueCount, getKnownCount, getHighConfidenceCount,             │
+// │     getRemainingCards, moveCardToBackOfActivePile, reshuffle*,      │
+// │     maybe*, capture/restore SpacedUndoSnapshot,                     │
+// │     applyUnspacedSharedSchedule, recordStudyOutcome,                │
+// │     advanceScheduledCards, getWordProgress, getDeckAggregateStats   │
+// │   - Morphology answer flow (answerMorphologyChoice,                 │
+// │     revealMorphologyAnswer, rateMorphologySelfCheck,                │
+// │     markMorphologyDontKnow)                                         │
+// │   - Mode predicates (isMorphologyMode, isReaderMode,                │
+// │     canAccessGrammarUi, getDirectionalMarksStore, etc.)             │
+// │   - startNextCycle, resetStudyState, resetUnspacedCycleState        │
+// │   - GLOBAL_CLICK_HANDLERS, init at bottom                           │
+// │                                                                     │
+// │ TASK → MINIMAL FILE SET                                             │
+// │   "fix a card-render bug"           render.js + runtime.js          │
+// │   "fix an analytics chart"          analytics.js + charts.js +      │
+// │                                       runtime.js                    │
+// │   "tweak SRS scheduling"            domain/srs/scheduler.js +       │
+// │                                       main.js (applySpacedReview,   │
+// │                                       buildStudyDeck) + runtime.js  │
+// │   "change progress-bar text"        progress.js + runtime.js        │
+// │   "add a new toggle"                navigation.js + runtime.js +    │
+// │                                       main.js (configureNavigation, │
+// │                                       GLOBAL_CLICK_HANDLERS,        │
+// │                                       syncToggleButtons) +          │
+// │                                       index.html                    │
+// │   "add a new onclick handler"       owning module + main.js         │
+// │                                       (GLOBAL_CLICK_HANDLERS) +     │
+// │                                       index.html                    │
+// │   "add a Study Selector section"    selectors.js + runtime.js +     │
+// │                                       index.html                    │
+// │   "tweak export/import JSON shape"  persistence.js + runtime.js +   │
+// │                                       state/migrations.js (if       │
+// │                                       schema-breaking)              │
+// │   "add a new XP source"             domain/gamification/levels.js + │
+// │                                       domain/gamification/xp.js +   │
+// │                                       maybe analytics.js            │
+// │   "fix a modal close bug"           modals.js                       │
+// │   "fix the reader drill flow"       reader.js                       │
+// │                                                                     │
+// │ WHEN TO LOAD THIS FILE                                              │
+// │   - Wiring a brand-new module (you need to add a configure* call)   │
+// │   - A bug in one of the deck primitives or morphology answer flow   │
+// │   - A bug in the boot sequence (init at bottom of file)             │
+// │   - Adding a new onclick handler (GLOBAL_CLICK_HANDLERS)            │
+// │   In all other cases, prefer the relevant module(s). main.js is     │
+// │   ~1,450 lines; loading it for a small change wastes tokens.        │
+// │                                                                     │
+// │ DEPLOY                                                              │
+// │   Bump CACHE_NAME in sw.js (e.g. v64 → v65) AND every ?v=64 in      │
+// │   sw.js + index.html. New js/* files must be added to                │
+// │   APP_SHELL_PATHS in sw.js.                                         │
+// │                                                                     │
+// │ VERIFICATION                                                        │
+// │   Strict-import parse catches more than `node --check`:             │
+// │     node --input-type=module -e \                                   │
+// │       "import('./js/app/main.js').catch(e=>{                        │
+// │         console.error(e.message); process.exit(1);})"               │
+// │   `document is not defined` is a successful parse (DOM unavailable  │
+// │   in Node) — only treat actual SyntaxError / Invalid… as failures.  │
+// │                                                                     │
+// │ HISTORY                                                             │
+// │   See REFACTOR_PLAN.txt for module-by-module rationale, the         │
+// │   runtime-sweep methodology, and patterns to follow for future      │
+// │   extractions.                                                      │
+// └─────────────────────────────────────────────────────────────────────┘
+
+// Utils
+import { clamp, isPlainObject, shuffleArray, escapeHtml, cloneForUndo } from '../utils/helpers.js';
+import { formatUsageDuration, formatAnalyticsDate, formatAnalyticsDateTime, getUsageDayKey, getUnspacedArchiveDayKey } from '../utils/time.js';
+import { getStorage, isLikelyIOS } from '../utils/storage.js';
+import { compareGreekAlphabetical } from '../utils/greekSort.js';
+
+// Domain — SRS
+import { SRS_NEAR_WINDOW_MS, SRS_CYCLE_ADVANCE_MS, SESSION_IDLE_RESET_MS, getCadencePreset,
+         SRS_UNCERTAIN_MIN_MS, SRS_VARIANT_HOLD_MS, SRS_RELEARN_STEP_DAYS, SRS_HARD_RELEARN_STEPS,
+         LEECH_LAPSE_THRESHOLD, LEECH_UNPIN_STREAK, LEECH_DRILL_DAYS } from '../domain/srs/constants.js';
+import { msFromDays, daysFromMs, setProgressDelay,
+         getSrsEase, getSrsStage, getLastEasyIntervalDays, getNextEasyIntervalDays,
+         formatRemainingForTable } from '../domain/srs/scheduler.js';
+import { recordConfidenceSample, getConfidencePct, computeCardXpAward,
+         addVariantFaceSample, recordVariantRoundConfidence } from '../domain/srs/confidence.js';
+
+// Domain — Gamification
+import { XP_LEVELS, REVIEW_XP_SCHEDULE } from '../domain/gamification/levels.js';
+import {
+  sanitizeUsageStats,
+  accumulateUsageTime as accumulateUsageTimeForStats,
+  accumulateActiveStudyTime as accumulateActiveStudyTimeForStats,
+  finalizeStudySession as finalizeStudySessionForStats,
+  noteStudyInteraction as noteStudyInteractionForStats,
+  getUsageMsForDay,
+  getActiveStudyMsForDay
+} from '../domain/gamification/usageStats.js';
+// xp.js wrappers are exposed by analytics.js (which owns the runtime-bound
+// versions). Importing them here keeps existing call sites in main.js working.
+
+// Domain — Deck
+import { isChapterKey, isAdvancedKey, sortSetKeys, sourceHint, expandSessionSets } from '../domain/deck/ordering.js';
+import { getSelectedVocabCards, getSelectedGrammarCards, getAllVocabKeys, getAllChapterKeys,
+         getAllVocabCards, getAllGrammarCards, getChapterVocabCards, expandIrregularCards, irregularEnabledTags, isIrregularCardEnabled, IRREGULAR_CARD_CONFIGS, progressCardId, derivedCardFaceKey,
+         getCardReviewLeft, getCardReviewRight, getCardMetaLine, getCardAuxLine } from '../domain/deck/filters.js';
+
+// Domain — Grammar
+import { buildGrammarSupportHtml } from '../domain/grammar/explanations.js';
+import { recordParadigmAttempt, inferredFollowupDims, buildInferredStep, structuralImpossibilityReason, paradigmGapReason, lemmaInventoryGapReason, isLemmaFormKnown, getLemmaFormStatus, weightedRecentMissScore, parseAnswerDimensions, isPartialCompositePick, PARTIAL_COMPOSITE_CREDIT } from '../domain/grammar/morph_steps.js';
+import { listAvailableParadigms, listAvailableParadigmsByCategory, getCardsForFocusedParadigm, getCardsForParadigmCategory, getCardsForParadigmLemmas, getAllParsingCards, parseCategoryShuffleValue, makeCategoryShuffleValue, chooseDefaultFocusedParadigm, isParsingIncompatibleLemma } from '../domain/grammar/paradigm_focus.js';
+import { buildLookupPool, truncatePicksFrom } from '../domain/grammar/morph_lookup.js';
+
+// UI
+import {
+  configureReader,
+  renderReaderModule,
+  advanceReaderDrill,
+  selectReaderDrillChoice,
+  openReaderTab
+} from '../ui/reader.js';
+import { installKeyboardShortcuts } from '../ui/keyboard.js';
+import { showLevelToast, showBadgeToast } from '../ui/toast.js';
+import {
+  initPwaInstall,
+  maybeScheduleInstallPrompt,
+  triggerInstall,
+  closeInstallInstructions,
+  isInstallInstructionsOpen,
+  dontShowInstallAgain
+} from '../ui/pwaInstall.js';
+import { installTouchSafeTapBridge } from '../ui/touchTapBridge.js';
+import { installClickShield, shieldClicksBriefly } from '../utils/clickShield.js';
+import {
+  configureModals,
+  updateConsentButtonState,
+  openDisclaimerModal,
+  closeDisclaimerModal,
+  handleConsentAction,
+  initializeConsentGate,
+  showDisclaimerModal,
+  isDisclaimerModalOpen,
+  maybeShowWhatsNewV1_5Modal,
+  openWhatsNewV1_5Modal,
+  closeWhatsNewV1_5Modal,
+  isWhatsNewV1_5ModalOpen,
+  closeAspectDefaultOffModal,
+  isAspectDefaultOffModalOpen,
+  isTransferModalOpen,
+  isStudySelectorOpen,
+  openStudySelector,
+  closeStudySelector,
+  isShortcutsModalOpen,
+  openShortcutsModal,
+  closeShortcutsModal,
+  isAnalyticsModalOpen,
+  openAnalyticsOverlay,
+  closeAnalyticsOverlay,
+  startStudying
+} from '../ui/modals.js';
+import {
+  configureProgress,
+  renderProgress,
+  renderReview,
+  returnSeenCardToDeck,
+  setReviewSortMode,
+  clearParsingMorph
+} from '../ui/progress.js';
+import { configureRender, renderCard, flipCard } from '../ui/render.js';
+import {
+  configureSelectors,
+  isSessionFullySelected,
+  findExactSessionMatch,
+  setActiveSessionButton,
+  setActiveSetButtons,
+  buildSessions,
+  buildChapterSelector,
+  buildSupplementalSelector,
+  buildAdvancedSelector,
+  buildBookVocabSelector,
+  deselectAllSupplementals,
+  deselectAllAdvanced,
+  deselectAllBooks,
+  deselectAllChapters,
+  deselectAll,
+  toggleAdvancedSubGroup,
+  loadDeckFromKeys,
+  loadSession,
+  toggleSession,
+  getParadigmBaseKey,
+  toggleSet
+} from '../ui/selectors.js';
+import {
+  configureNavigation,
+  navigate,
+  markCard,
+  setStudyMode,
+  setAppProfile,
+  toggleMorphSelfCheck,
+  toggleMorphStepByStep,
+  setMorphFocusedParadigm,
+  toggleShuffle,
+  toggleRequiredOnly,
+  toggleHardVocabReview,
+  toggleStemNotes,
+  toggleIrregularCards,
+  toggleIrregularTense,
+  toggleDirection,
+  toggleSpacedRepetition,
+  toggleSpacingCadence,
+  toggleSplitSelection,
+  toggleAspectStep,
+  toggleDimStep,
+  toggleOptionalForms,
+  toggleOptionalFormFilter,
+  toggleDimValueFilter,
+  toggleExcludeKnownMorphs,
+  toggleParsingShuffleAll,
+  toggleParsingCustomReview,
+  toggleParsingCustomParadigm,
+  setAllParsingCustomParadigms,
+  toggleParsingReverse,
+  toggleParsingLookup,
+  toggleAccentLookalikes,
+  toggleUnspacedDailyReset,
+  reshuffleEligible,
+  fastForwardOneDay,
+  fastForwardOneWeek,
+  resetCurrentDeck,
+  resetRequiredOnly,
+  resetKnownMorphs,
+  closeResetKnownModal,
+  confirmResetKnownFocused,
+  confirmResetKnownAll,
+  clearParsingStats,
+  closeResetSpacedModal,
+  updateResetSpacedScopeLabels,
+  confirmResetSpacedTimingOnly,
+  confirmResetSpacedProgress,
+  confirmResetSpacedSmooth,
+  closeResetUnspacedModal,
+  confirmResetUnspacedMarks,
+  openResetStatsModal,
+  closeResetStatsModal,
+  confirmResetStatsKeepSettings,
+  confirmResetToStart,
+  resetAllStats
+} from '../ui/navigation.js';
+import {
+  configureAnalytics,
+  migrateLegacyXp,
+  computeXpAndLevel,
+  computeAchievements,
+  syncEarnedAchievementSnapshot,
+  maybeCelebrateLevelUp,
+  maybeCelebrateAchievements,
+  renderAnalyticsOverlay
+} from '../ui/analytics.js';
+import {
+  configurePersistence,
+  closeTransferModal,
+  handleTransferPrimaryAction,
+  handleTransferSecondaryAction,
+  exportProgressJson,
+  triggerImportProgress,
+  getDeckStateKey,
+  saveCurrentDeckStateToBank,
+  markActiveDeckRef,
+  saveState,
+  clearSavedState,
+  reorderDeckFromIds,
+  restoreState,
+  buildPersistedStatePayload
+} from '../state/persistence.js';
+import {
+  backfillConfirmedMilestones,
+  buildDailyCumulativeSeriesFromMap,
+  buildCumulativeConfirmationSeries,
+  getCertaintyBucketForCard,
+  buildCertaintyBuckets,
+  buildConfirmationHistogram,
+  buildHistogramSvg,
+  buildLineChartSvg,
+  buildBarChartSvg,
+  buildHeatmapSvg,
+  buildCircularProgressSvg,
+  buildLevelBarHtml,
+  buildTitleLadderHtml,
+  buildWordStatCardHtml
+} from '../ui/charts.js';
+
+// State
+import { runtime } from '../state/runtime.js';
+import { STATE_MIGRATIONS, summarizePersistedState, formatPersistedStateSummary } from '../state/migrations.js';
+import {
+  sanitizeGamificationState,
+  STORAGE_KEY,
+  CONSENT_STORAGE_KEY,
+  WHATS_NEW_V1_5_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  FONT_FAMILY_STORAGE_KEY,
+  TEXT_SIZE_STORAGE_KEY,
+  PROGRESS_EXPORT_FORMAT,
+  PROGRESS_EXPORT_VERSION,
+  STUDY_IDLE_MS,
+  STUDY_SESSION_BREAK_MS,
+  MAX_STUDY_SESSION_HISTORY
+} from '../state/store.js';
+
+// Wire UI modules with the host helpers they call back into.
+// Function declarations are hoisted; getter/setter closures defer reads to
+// invocation time, so let-binding values are valid by the time they're called.
+configureReader({ noteStudyInteraction, setStudyMode });
+configureModals({
+  renderAnalyticsOverlay: () => renderAnalyticsOverlay(),
+  buildSessions: () => buildSessions(),
+  buildChapterSelector: () => buildChapterSelector(),
+  buildSupplementalSelector: () => buildSupplementalSelector(),
+  buildAdvancedSelector: () => buildAdvancedSelector(),
+  buildBookVocabSelector: () => buildBookVocabSelector(),
+  getHasAcceptedDisclaimer: () => runtime.hasAcceptedDisclaimer,
+  setHasAcceptedDisclaimer: (v) => { runtime.hasAcceptedDisclaimer = v; },
+  getDisclaimerModalRequiresAgreement: () => runtime.disclaimerModalRequiresAgreement,
+  setDisclaimerModalRequiresAgreement: (v) => { runtime.disclaimerModalRequiresAgreement = v; },
+  hasSelectedKeys: () => runtime.selectedKeys.length > 0,
+  setSpacingCadence: (cadence) => {
+    if (cadence !== 'relaxed' && cadence !== 'intensive') return;
+    runtime.spacingCadence = cadence;
+    syncToggleButtons();
+    saveState();
+  },
+  // New-users-only: schedule the PWA install nudge right after the first-run
+  // consent flow opens the study selector.
+  onDisclaimerAccepted: () => maybeScheduleInstallPrompt()
+});
+configureProgress({
+  accumulateUsageTime: () => accumulateUsageTime(),
+  accumulateActiveStudyTime: () => accumulateActiveStudyTime(),
+  updateUsageMeta: () => updateUsageMeta(),
+  getKnownCount: () => getKnownCount(),
+  getDueCount: (cards) => getDueCount(cards),
+  getRemainingCards: () => getRemainingCards(),
+  getHighConfidenceCount: () => getHighConfidenceCount(),
+  getWordProgress: (id, opts) => getWordProgress(id, opts),
+  isMorphologyMode: () => isMorphologyMode(),
+  isParsingMode: () => isParsingMode(),
+  renderAnalyticsOverlay: () => renderAnalyticsOverlay(),
+  moveCardToBackOfActivePile: (card) => moveCardToBackOfActivePile(card),
+  buildStudyDeck: (cards, opts) => buildStudyDeck(cards, opts),
+  renderCard: () => renderCard(),
+  saveState: () => saveState(),
+  getEnabledParsingDims: () => getEnabledParsingDims(),
+  // Rebuild the parsing deck after a single form's tally is cleared via the
+  // review panel's ✕ — needed so a freshly-cleared form re-enters the deck
+  // when "skip confident" (exclude-known-morphs) is on. Re-renders + persists.
+  rebuildParsingDeck: () => rebuildMorphDeckForStepMode(),
+  // Same pool the parsing drill uses for `lemma`: chapter-gated against
+  // the user's aggregate selection, and including optional paradigm
+  // extensions iff the user has toggled them on. Used by the parsing-
+  // review row expansion to list "testable forms" with last-attempt
+  // outcomes. Excludes known morphs only when the user has the toggle on;
+  // otherwise lists the full focused-paradigm pool so the panel always
+  // shows everything in scope (including 2/2-known forms).
+  getMorphCardsForLemma: (lemma) => getCardsForFocusedParadigm(
+    getAggregateSelectionKeys(),
+    lemma,
+    {
+      includeOptional: !!runtime.includeOptionalForms,
+      optionalFilters: runtime.optionalFormFilters,
+      dimValueFilters: runtime.dimValueFilters
+    }
+  ),
+  // Every concrete paradigm whose chapter gate is met at the current
+  // selection (excluding aggregate buckets), used by the default parsing
+  // review panel to list in-scope paradigms the student hasn't drilled yet.
+  getInScopeParadigmLemmas: () => listAvailableParadigms(getAggregateSelectionKeys())
+    .filter((p) => !p.isAggregate)
+    .map((p) => p.lemma)
+});
+configureRender({
+  saveState: () => saveState(),
+  syncLayoutVisibility: () => syncLayoutVisibility(),
+  noteStudyInteraction: () => noteStudyInteraction(),
+  getNearDueCount: () => getNearDueCount(),
+  isMorphologyMode: () => isMorphologyMode(),
+  isParsingMode: () => isParsingMode(),
+  isReverseGrammarActive: () => isReverseGrammarActive(),
+  isMorphCard: (card) => isMorphCard(card),
+  reverseDisplayActive: (card) => reverseDisplayActive(card),
+  startNextCycle: (mode, opts) => startNextCycle(mode, opts),
+  resetMorphAnswerState: () => resetMorphAnswerState(),
+  noteParsingCardShown: (cardId) => noteParsingCardShown(cardId),
+  maybeReturnKnownCardToActivePile: () => maybeReturnKnownCardToActivePile(),
+  formatGreekHeadword: (g) => typeof window !== 'undefined' && typeof window.formatGreekHeadword === 'function' ? window.formatGreekHeadword(g) : (g || '—'),
+  transliterateGreek: (s) => typeof window !== 'undefined' && typeof window.transliterateGreek === 'function' ? window.transliterateGreek(s) : s,
+  detectPartOfSpeech: (card) => typeof window !== 'undefined' && typeof window.detectPartOfSpeech === 'function' ? window.detectPartOfSpeech(card) : '',
+  isMultiCasePreposition: (card) => typeof window !== 'undefined' && typeof window.isMultiCasePreposition === 'function' ? window.isMultiCasePreposition(card) : false,
+  getEnabledParsingDims: () => getEnabledParsingDims(),
+  // Full focused-paradigm pool for paradigm-gap detection: chapter-gated, but
+  // deliberately NOT pruned by exclude-known or per-value dim filters, so the
+  // present-values truth reflects the whole paradigm (e.g. ἐγώ/σύ has only
+  // 1st/2nd person regardless of which forms the user has mastered/excluded).
+  getFocusedParadigmAllCards: (card) => {
+    if (!isParsingMode()) return [];
+    // When the deck mixes paradigms — the global shuffle-all toggle, or a
+    // category "shuffle all of type" selection — the gap-detection pool must
+    // key off the CURRENT card's own lemma, since morphFocusedParadigm holds
+    // a sentinel, not a lemma. Otherwise use the focused lemma as before.
+    const mixing = runtime.parsingShuffleAll || runtime.parsingCustomReview || !!parseCategoryShuffleValue(runtime.morphFocusedParadigm);
+    const lemma = mixing ? (card && card.lemma) : runtime.morphFocusedParadigm;
+    if (!lemma) return [];
+    return getCardsForFocusedParadigm(
+      getAggregateSelectionKeys(),
+      lemma,
+      {
+        includeOptional: !!runtime.includeOptionalForms,
+        optionalFilters: runtime.optionalFormFilters
+      }
+    );
+  },
+  getLookupFocusLemma: () => getLookupFocusLemma(),
+  getLookupFormsForLemma: (lemma) => getLookupFormsForLemma(lemma)
+});
+configureSelectors({
+  getSessions: () => getSessions(),
+  getSelectedCards: (keys) => getSelectedCards(keys),
+  getDirectionalMarksStore: () => getDirectionalMarksStore(),
+  getDirectionalProgressStore: () => getDirectionalProgressStore(),
+  resetMorphAnswerState: () => resetMorphAnswerState(),
+  resetParsingShowCounts: () => resetParsingShowCounts(),
+  getDeckStateKey: (keys, req, spaced) => getDeckStateKey(keys, req, spaced),
+  reorderDeckFromIds: (cards, ids) => reorderDeckFromIds(cards, ids),
+  buildStudyDeck: (cards, opts) => buildStudyDeck(cards, opts),
+  getDueCount: (cards) => getDueCount(cards),
+  resetUnspacedCycleState: () => resetUnspacedCycleState(),
+  resetStudyState: () => resetStudyState(),
+  syncToggleButtons: () => syncToggleButtons(),
+  clearSpacedUndoSnapshot: () => clearSpacedUndoSnapshot(),
+  saveCurrentDeckStateToBank: () => saveCurrentDeckStateToBank(),
+  markActiveDeckRef: () => markActiveDeckRef(),
+  saveState: () => saveState(),
+  canAccessGrammarUi: () => canAccessGrammarUi(),
+  isMorphStepByStepActive: () => isParsingMode(),
+  getFocusedParadigmCards: () => {
+    if (!isParsingMode()) return null;
+    return buildFilteredFocusedParadigmCards();
+  }
+});
+configureNavigation({
+  noteStudyInteraction: () => noteStudyInteraction(),
+  isMorphologyMode: () => isMorphologyMode(),
+  isParsingMode: () => isParsingMode(),
+  isReaderMode: () => isReaderMode(),
+  normalizeStudyMode: (m) => normalizeStudyMode(m),
+  resetMorphAnswerState: () => resetMorphAnswerState(),
+  ensureDirectionalStores: () => ensureDirectionalStores(),
+  getDirectionalMarksStore: () => getDirectionalMarksStore(),
+  getDirectionalProgressStore: () => getDirectionalProgressStore(),
+  syncToggleButtons: () => syncToggleButtons(),
+  syncLayoutVisibility: () => syncLayoutVisibility(),
+  startNextCycle: (mode, opts) => startNextCycle(mode, opts),
+  getKnownCount: () => getKnownCount(),
+  advanceScheduledCards: (cards, ms) => advanceScheduledCards(cards, ms),
+  buildStudyDeck: (cards, opts) => buildStudyDeck(cards, opts),
+  captureSpacedUndoSnapshot: () => captureSpacedUndoSnapshot(),
+  applySpacedReview: (card, outcome) => applySpacedReview(card, outcome),
+  clearSpacedUndoSnapshot: () => clearSpacedUndoSnapshot(),
+  restoreSpacedUndo: () => restoreSpacedUndo(),
+  pushUnspacedHistory: (type) => pushUnspacedHistory(type),
+  restoreUnspacedHistoryStep: () => restoreUnspacedHistoryStep(),
+  clearSavedState: () => clearSavedState(),
+  maybeReturnConfirmedDeferredCard: () => maybeReturnConfirmedDeferredCard(),
+  maybePeriodicReshuffle: () => maybePeriodicReshuffle(),
+  recordStudyOutcome: (id, outcome, at) => recordStudyOutcome(id, outcome, at),
+  applyUnspacedSharedSchedule: (card, outcome, at) => applyUnspacedSharedSchedule(card, outcome, at),
+  getRemainingCards: () => getRemainingCards(),
+  resetUnspacedCycleState: () => resetUnspacedCycleState(),
+  noteUnspacedArchiveActivity: () => noteUnspacedArchiveActivity(),
+  saveCurrentDeckStateToBank: () => saveCurrentDeckStateToBank(),
+  markActiveDeckRef: () => markActiveDeckRef(),
+  saveState: () => saveState(),
+  renderReaderModule: () => renderReaderModule(),
+  getDeckStateKey: (keys, req, spaced) => getDeckStateKey(keys, req, spaced),
+  getSessions: () => getSessions(),
+  getSelectedCards: (keys) => getSelectedCards(keys),
+  resetMorphStepState: () => resetMorphStepState(),
+  ensureMorphFocusedParadigm: () => ensureMorphFocusedParadigm(),
+  rebuildMorphDeckForStepMode: () => rebuildMorphDeckForStepMode(),
+  rebuildParsingCycle: (opts) => rebuildParsingCycle(opts),
+  // Pin the focused paradigm to a concrete lemma when lookup mode turns on.
+  prepareLookupFocus: () => prepareLookupFocus(),
+  // In-scope paradigm lemmas at the current selection — used by the custom
+  // paradigm set's "Select all" action. Stem-recall pseudo-lemmas are dropped so
+  // Select-all matches the checklist (which excludes them) and never ticks an
+  // inert, non-parseable entry into the set.
+  listAvailableParadigmLemmas: () => listAvailableParadigms(getAggregateSelectionKeys())
+    .map((p) => p.lemma)
+    .filter((lemma) => !isParsingIncompatibleLemma(lemma))
+});
+configureAnalytics({
+  ensureUsageStats: () => ensureUsageStats(),
+  accumulateActiveStudyTime: () => accumulateActiveStudyTime(),
+  canAccessGrammarUi: () => canAccessGrammarUi(),
+  saveState: () => saveState(),
+  getEnabledParsingDims: () => getEnabledParsingDims(),
+  // Chapter-gated in-scope forms for a paradigm (same pool the deck + the
+  // review panel use), so the analytics breakdown only shows values the
+  // student's current chapter scope has unlocked.
+  getMorphCardsForLemma: (lemma) => getCardsForFocusedParadigm(
+    getAggregateSelectionKeys(),
+    lemma,
+    {
+      includeOptional: !!runtime.includeOptionalForms,
+      optionalFilters: runtime.optionalFormFilters,
+      dimValueFilters: runtime.dimValueFilters
+    }
+  )
+});
+configurePersistence({
+  ensureUsageStats: (stats) => ensureUsageStats(stats),
+  normalizeStudyMode: (m) => normalizeStudyMode(m),
+  ensureDirectionalStores: () => ensureDirectionalStores(),
+  getDirectionalMarksStore: () => getDirectionalMarksStore(),
+  getStudyStoreKey: () => getStudyStoreKey(),
+  accumulateUsageTime: () => accumulateUsageTime(),
+  accumulateActiveStudyTime: () => accumulateActiveStudyTime(),
+  getSessions: () => getSessions(),
+  getSelectedCards: (keys) => getSelectedCards(keys),
+  buildStudyDeck: (cards, opts) => buildStudyDeck(cards, opts),
+  getDueCount: (cards) => getDueCount(cards),
+  resetMorphAnswerState: () => resetMorphAnswerState(),
+  resetUnspacedCycleState: () => resetUnspacedCycleState(),
+  clearSpacedUndoSnapshot: () => clearSpacedUndoSnapshot(),
+  syncToggleButtons: () => syncToggleButtons(),
+  syncLayoutVisibility: () => syncLayoutVisibility(),
+  getDirectionalProgressStore: () => getDirectionalProgressStore(),
+  isReaderMode: () => isReaderMode(),
+  renderReaderModule: () => renderReaderModule(),
+  maybeAutoResetUnspacedArchives: () => maybeAutoResetUnspacedArchives()
+});
+
+
+function getDirectionKey() {
+  return runtime.directionToGreek ? 'e2g' : 'g2e';
+}
+
+function getStudyStoreKey() {
+  if (runtime.studyMode === 'morph') {
+    return runtime.directionToGreek ? 'morph_e2g' : 'morph';
+  }
+  // Parsing mode is off-the-record (no SRS / no main-stats writes), so it
+  // reads its directional store under its own key — keeping it cleanly
+  // separated from the grammar-mode mark store.
+  if (runtime.studyMode === 'parsing') return 'parsing';
+  return getDirectionKey();
+}
+
+function isReverseGrammarActive() {
+  return runtime.studyMode === 'morph' && runtime.directionToGreek;
+}
+
+function reverseDisplayActive(card) {
+  return isReverseGrammarActive() && !!card && card.reversible === true;
+}
+
+function ensureDirectionalStores() {
+  if (!runtime.globalWordMarks || typeof runtime.globalWordMarks !== 'object' || Array.isArray(runtime.globalWordMarks)) runtime.globalWordMarks = {};
+  if (!runtime.globalWordProgress || typeof runtime.globalWordProgress !== 'object' || Array.isArray(runtime.globalWordProgress)) runtime.globalWordProgress = {};
+
+  const migrateLegacyBucket = (bucketObj) => {
+    const keys = Object.keys(bucketObj || {});
+    if (keys.length && !('g2e' in bucketObj) && !('e2g' in bucketObj) && !('morph' in bucketObj)) {
+      return { g2e: { ...bucketObj }, e2g: {}, morph: {} };
+    }
+    return bucketObj;
+  };
+
+  runtime.globalWordMarks = migrateLegacyBucket(runtime.globalWordMarks);
+  runtime.globalWordProgress = migrateLegacyBucket(runtime.globalWordProgress);
+
+  if (!runtime.globalWordMarks.g2e || typeof runtime.globalWordMarks.g2e !== 'object') runtime.globalWordMarks.g2e = {};
+  if (!runtime.globalWordMarks.e2g || typeof runtime.globalWordMarks.e2g !== 'object') runtime.globalWordMarks.e2g = {};
+  if (!runtime.globalWordMarks.morph || typeof runtime.globalWordMarks.morph !== 'object') runtime.globalWordMarks.morph = {};
+  if (!runtime.globalWordMarks.morph_e2g || typeof runtime.globalWordMarks.morph_e2g !== 'object') runtime.globalWordMarks.morph_e2g = {};
+  if (!runtime.globalWordMarks.parsing || typeof runtime.globalWordMarks.parsing !== 'object') runtime.globalWordMarks.parsing = {};
+  if (!runtime.globalWordProgress.g2e || typeof runtime.globalWordProgress.g2e !== 'object') runtime.globalWordProgress.g2e = {};
+  if (!runtime.globalWordProgress.e2g || typeof runtime.globalWordProgress.e2g !== 'object') runtime.globalWordProgress.e2g = {};
+  if (!runtime.globalWordProgress.morph || typeof runtime.globalWordProgress.morph !== 'object') runtime.globalWordProgress.morph = {};
+  if (!runtime.globalWordProgress.morph_e2g || typeof runtime.globalWordProgress.morph_e2g !== 'object') runtime.globalWordProgress.morph_e2g = {};
+  if (!runtime.globalWordProgress.parsing || typeof runtime.globalWordProgress.parsing !== 'object') runtime.globalWordProgress.parsing = {};
+}
+
+function getDirectionalMarksStore() {
+  ensureDirectionalStores();
+  return runtime.globalWordMarks[getStudyStoreKey()];
+}
+
+function getDirectionalProgressStore() {
+  ensureDirectionalStores();
+  return runtime.globalWordProgress[getStudyStoreKey()];
+}
+
+
+// Fixed 1-in-N chance per flip (not scaled by pool size) to return one
+// random known card to the active pile. 50 → ~1 return per 50 flips (2%).
+const KNOWN_CARD_RANDOM_RETURN_FLIP_ODDS = 50;
+
+
+function isMorphologyMode() {
+  return runtime.studyMode === 'morph';
+}
+
+// Parsing is its own top-level study mode (separate from Grammar). Grammar
+// keeps its single-MC parse cards; Parsing always runs the step-by-step
+// dimensional walk against the focused paradigm.
+function isParsingMode() {
+  return runtime.studyMode === 'parsing';
+}
+
+// Map of parsing dims the user currently has enabled — used to filter
+// per-dim values out of stats/forms reads when the user has toggled the
+// corresponding step off. Aspect lives on its own toggle (predates the
+// dimToggles bag) so it's surfaced explicitly here. Returned object is
+// reused as a plain { dim: bool } lookup; missing keys count as enabled.
+function getEnabledParsingDims() {
+  const dt = (runtime.dimToggles && typeof runtime.dimToggles === 'object') ? runtime.dimToggles : {};
+  return {
+    aspect: runtime.aspectStep !== false,
+    tense:  dt.tense  !== false,
+    voice:  dt.voice  !== false,
+    mood:   dt.mood   !== false,
+    person: dt.person !== false,
+    number: dt.number !== false,
+    case:   dt.case   !== false,
+    gender: dt.gender !== false
+  };
+}
+
+function isReaderMode() {
+  return runtime.studyMode === 'reader';
+}
+
+function isCardStudyMode() {
+  return runtime.studyMode === 'vocab' || runtime.studyMode === 'morph' || runtime.studyMode === 'parsing' || runtime.studyMode === 'reader';
+}
+
+function isReviewDeckMode() {
+  return runtime.studyMode === 'vocab' || runtime.studyMode === 'morph' || runtime.studyMode === 'parsing';
+}
+
+function isVocabOnlyProfile() {
+  return false;
+}
+
+function canAccessGrammarUi() {
+  return !isVocabOnlyProfile();
+}
+
+function getSessions() {
+  return Array.isArray(window.SESSIONS) ? window.SESSIONS : [];
+}
+
+function getProfileDescription() {
+  return 'Full layout with vocabulary, grammar, reader, and memorization. Time totals stay shared, while progress remains separate by module.';
+}
+
+function normalizeStudyMode(mode) {
+  if (mode === 'morph' && canAccessGrammarUi()) return 'morph';
+  if (mode === 'parsing' && canAccessGrammarUi()) return 'parsing';
+  if (mode === 'reader') return 'reader';
+  return 'vocab';
+}
+
+function isMorphCard(card) {
+  return !!card && card.kind === 'morph';
+}
+
+function resetMorphAnswerState() {
+  runtime.morphAnswerState = { answered: false, revealed: false, selfRated: false, selectedIndex: -1, isCorrect: null };
+  runtime.morphPendingAdvance = false;
+}
+
+function resetMorphStepState() {
+  runtime.morphStepState = { cardId: null, steps: [], stepIdx: 0, answers: [], completed: false };
+}
+
+// Pick a default focused paradigm if none chosen, drawn from the current
+// selection. Called when toggling step-by-step on; safe to call any time —
+// it only writes when the field is currently null and a candidate exists.
+function ensureMorphFocusedParadigm() {
+  if (runtime.morphFocusedParadigm) return;
+  const available = listAvailableParadigms(getAggregateSelectionKeys());
+  if (available.length) runtime.morphFocusedParadigm = available[0].lemma;
+}
+
+// Selection keys used for chapter-gating paradigm pools. In parsing mode
+// the dedicated "Current chapter" dropdown is the single source of truth
+// (runtime.parsingChapter), so we synthesize a one-element key array from
+// it and ignore vocab/grammar's selectedKeys. Everywhere else we fall
+// back to the union across modes so the student's "max effective chapter"
+// reflects their highest point in the course.
+function getAggregateSelectionKeys() {
+  if (isParsingMode()) {
+    return [String(getParsingChapter())];
+  }
+  const union = new Set((runtime.selectedKeys || []).map(String));
+  const ms = runtime.modeSelections || {};
+  Object.keys(ms).forEach((mode) => {
+    if (mode === 'parsing') return; // parsing has its own gating; don't leak it into other modes
+    const entry = ms[mode];
+    if (entry && Array.isArray(entry.selectedKeys)) {
+      entry.selectedKeys.forEach((k) => union.add(String(k)));
+    }
+  });
+  return [...union];
+}
+
+// Full paradigm scope = every chapter (1..20). Build/Lookup mode is a complete
+// paradigm reference and is deliberately NOT gated by the selected chapter: the
+// form pool already spans all chapters (getLookupFormsForLemma), so the focus
+// dropdown and default focus must too — otherwise picking a low chapter empties
+// the paradigm list ("No paradigms in current selection") even though every
+// form is available. The normal drill stays gated to the parsing chapter.
+const PARSING_FULL_SCOPE_KEYS = ['20'];
+function getParadigmFocusScopeKeys() {
+  return runtime.parsingLookup ? PARSING_FULL_SCOPE_KEYS : getAggregateSelectionKeys();
+}
+
+// Coerce runtime.parsingChapter to a valid 1..20 integer. Returns 20 as
+// the fallback (every Duff chapter in scope).
+function getParsingChapter() {
+  const n = Number(runtime.parsingChapter);
+  if (Number.isFinite(n) && Number.isInteger(n) && n >= 1 && n <= 20) return n;
+  return 20;
+}
+
+// Sentinel <option> value at the head of the parsing chapter dropdown. It's the
+// dropdown face of the Lookup-mode toggle: selecting it turns Lookup on, and
+// selecting any real chapter turns it back off (see setParsingChapter /
+// syncParsingChapterUi). Non-numeric so it never parses as a chapter.
+const PARSING_BUILD_MODE_VALUE = 'build';
+
+// Parsing mode narrows the deck to the focused paradigm's forms via the
+// selectors-host hook; switching the focused paradigm re-runs
+// loadDeckFromKeys so the deck rebuilds accordingly.
+function rebuildMorphDeckForStepMode() {
+  if (!isParsingMode()) return;
+  loadDeckFromKeys(runtime.selectedKeys, runtime.currentSession ? runtime.currentSession.id : null);
+}
+
+// Handler for the parsing-mode chapter dropdown. Updates runtime.parsingChapter,
+// resyncs the deck's gating, and lets the focused-paradigm dropdown pick a
+// new default if the previous lemma falls out of scope at the new chapter.
+// Handler for the parsing-mode redirect card. The stem-highlighted
+// stem-pair cards (e.g. W4_SECOND_AORIST_STEMS — "γινώσκω → ἔγνων") live
+// in Vocab mode as a supplemental set; parsing can't walk them
+// dimensionally. The card is a one-tap shortcut: switch to vocab mode,
+// replace the current vocab selection with just that supplemental set,
+// and rebuild the deck.
+function goToStemDrillFromParsing(setKey) {
+  if (typeof setKey !== 'string' || !setKey) return;
+  // The supplemental set must actually be registered — otherwise we'd
+  // switch the user into vocab mode with an empty deck for no visible
+  // reason. Both SETS (master vocab registry) and the supplemental-vocab
+  // registry get the same key when registerSupplementalVocabSet runs.
+  const vocabSets = (typeof window !== 'undefined' && window.SUPPLEMENTAL_VOCAB_SETS) || {};
+  if (!vocabSets[setKey]) return;
+  // setStudyMode handles the parsing→vocab save/restore of modeSelections
+  // (parsing's chapter key gets stashed under modeSelections.parsing so
+  // it survives the round trip). After the mode flip, loadDeckFromKeys
+  // overwrites whatever vocab selection was restored with just the
+  // supplemental set the user tapped on.
+  setStudyMode('vocab');
+  loadDeckFromKeys([setKey], null, { clearUnspacedMarks: true });
+}
+
+function setParsingChapter(value) {
+  if (!isParsingMode()) return;
+  // The dropdown's first entry is the "Build mode" sentinel — the other face of
+  // the Lookup-mode toggle. Picking it turns Lookup on; picking a real chapter
+  // turns it back off. Keeping both in sync here (and reflecting the flag back
+  // into the dropdown in syncParsingChapterUi) makes the toggle ⇄ dropdown
+  // relationship symmetrical.
+  if (value === PARSING_BUILD_MODE_VALUE) {
+    if (!runtime.parsingLookup) toggleParsingLookup();
+    return;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 20) return;
+  const chapterChanged = n !== runtime.parsingChapter;
+  if (chapterChanged) {
+    runtime.parsingChapter = n;
+    runtime.selectedKeys = [String(n)];
+    runtime.currentSession = null;
+    // If the previously-focused paradigm isn't introduced until a later
+    // chapter, drop it so ensureMorphFocusedParadigm picks the first
+    // in-scope lemma on the next rebuild. Without this, loadDeckFromKeys
+    // builds an empty deck once before syncParadigmFocusUi corrects it.
+    if (runtime.morphFocusedParadigm) {
+      const available = listAvailableParadigms(getAggregateSelectionKeys());
+      if (!available.some((p) => p.lemma === runtime.morphFocusedParadigm)) {
+        runtime.morphFocusedParadigm = null;
+      }
+    }
+  }
+  // Choosing a real chapter while in Build mode drops back to the drill. The
+  // toggle reloads the deck (with the chapter set just above), so let it do the
+  // single reload rather than loading twice.
+  if (runtime.parsingLookup) {
+    toggleParsingLookup();
+    return;
+  }
+  if (!chapterChanged) return;
+  loadDeckFromKeys(runtime.selectedKeys, null);
+}
+
+// Step answer: record dimension correctness locally, advance through the
+// steps, write a single attempt to the rolling per-lemma window on
+// completion. NO writes to SRS, recordStudyOutcome, or directional marks —
+// parsing mode is explicitly off-the-record.
+// Dynamically appends ungraded follow-up steps when the student's pick
+// implies a parse class richer than the source card supplies (e.g.
+// picking mood=indicative on an imperative card means they need to
+// commit to a person before we can resolve their picks to a single
+// form). Returns the number of steps appended, or 0 if none.
+function maybeInjectInferredSteps(state, stepKey, picked) {
+  if (!state || !Array.isArray(state.steps)) return 0;
+  const existing = new Set(state.steps.map((s) => s.key));
+  // Dims that were auto-resolved (chapter-gated, user-toggled off, or the
+  // single-gender auto-skip) count as already present: their value is
+  // filled in silently and surfaced via impliedDims, so injecting an
+  // inferred step for them would re-ask a dim we deliberately didn't ask —
+  // and double-count it in the parse summary (e.g. a single-gender lemma's
+  // gender showing twice when the student picks mood=participle).
+  Object.keys(state.autoFilledDims || {}).forEach((k) => existing.add(k));
+  // maxChapter gates the imperative→person injection (3rd-person imperatives
+  // enter at ch 17); `picked` is the mood the student just chose, passed so an
+  // injected imperative person step offers only 2nd/3rd.
+  const maxChapter = Number.isFinite(state.maxChapter) ? state.maxChapter : Infinity;
+  const needs = inferredFollowupDims(stepKey, picked, existing, { maxChapter });
+  if (!needs.length) return 0;
+  const pools = state.accessiblePools || {};
+  const newSteps = needs.map((dk) => buildInferredStep(dk, pools, { mood: picked })).filter(Boolean);
+  if (!newSteps.length) return 0;
+  // Insert right after the current step so the natural dimension order
+  // (mood → person → number, etc.) is preserved.
+  state.steps.splice(state.stepIdx + 1, 0, ...newSteps);
+  state.answers.splice(state.stepIdx + 1, 0, ...new Array(newSteps.length).fill(null));
+  return newSteps.length;
+}
+
+// When an inferred follow-up step is answered, the trigger step that
+// caused its injection should reveal its correctness. Walks backward
+// from the just-answered inferred step, decrements the most recent
+// pending trigger, and clears the deferred flag when its counter hits
+// zero.
+function noteInferredAnswerSatisfied(state, answeredIdx) {
+  if (!state || !Array.isArray(state.answers)) return;
+  for (let i = answeredIdx - 1; i >= 0; i--) {
+    const a = state.answers[i];
+    if (a && a.deferred && a.triggersInferred > 0) {
+      a.triggersInferred -= 1;
+      if (a.triggersInferred === 0) {
+        delete a.deferred;
+        delete a.triggersInferred;
+      }
+      return;
+    }
+  }
+}
+
+// ─── Parsing-walk undo ────────────────────────────────────────────────────
+// Undo is a pedagogical tool, not a free retry. It reverts the most recent
+// guess so the student can re-open that step and pick a different value to
+// keep walking the parse along a sensible path (e.g. correcting a wrong mood
+// pick that sent them down the participle branch). Any dimension that gets
+// undone is still recorded as a miss when the walk finally completes
+// (state.forcedWrong), so stats and the spaced / exclude-known machinery
+// treat the original guess as wrong regardless of what's re-picked.
+function cloneParsingData(value) {
+  if (value == null) return value;
+  if (typeof structuredClone === 'function') {
+    try { return structuredClone(value); } catch (e) { /* fall through to JSON */ }
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+// Snapshot only the mutable parts of a forward-walk state before an action
+// changes them, so undo can restore them exactly. The static fields
+// (accessiblePools, paradigmPresentValues, autoFilledDims, impliedDims) don't
+// change during a walk, so they're kept by reference rather than cloned.
+function snapshotMorphStepState(state) {
+  return {
+    steps: cloneParsingData(state.steps),
+    answers: cloneParsingData(state.answers),
+    stepIdx: state.stepIdx,
+    completed: state.completed,
+    structuralImpossibility: cloneParsingData(state.structuralImpossibility || null),
+    paradigmGap: cloneParsingData(state.paradigmGap || null)
+  };
+}
+
+const MORPH_HISTORY_CAP = 64;
+function pushMorphHistory(state) {
+  if (!state) return;
+  if (!Array.isArray(state.history)) state.history = [];
+  state.history.push(snapshotMorphStepState(state));
+  while (state.history.length > MORPH_HISTORY_CAP) state.history.shift();
+}
+
+// Keys of the graded (non-inferred) steps that currently carry an answer.
+// Diffed across an undo to learn which dimensions the undone action committed.
+function gradedAnsweredStepKeys(steps, answers) {
+  const keys = new Set();
+  (steps || []).forEach((s, i) => {
+    if (!s || s.inferred) return;
+    if (answers && answers[i] != null) keys.add(s.key);
+  });
+  return keys;
+}
+
+function undoMorphologyStep() {
+  if (!isParsingMode()) return;
+  const card = runtime.deck[runtime.currentIdx];
+  const state = runtime.morphStepState;
+  if (!card || !state || !Array.isArray(state.history) || !state.history.length) return;
+  noteStudyInteraction();
+  // Diff the graded answers before vs. after the restore so the dimensions the
+  // undone action committed (one step for an answer/skip, every remaining step
+  // for a give-up) can be force-failed. Undo is offered only while the walk is
+  // in progress (never on the summary), so no finalized attempt can exist to
+  // roll back — the forced-wrong dims are simply recorded when the walk later
+  // completes normally.
+  const beforeKeys = gradedAnsweredStepKeys(state.steps, state.answers);
+  // Capture, from the pre-pop answers, the merit credit of each graded dim
+  // about to be rolled back — 1 (clean correct), 0.75 (partial composite), or 0
+  // (wrong) — so finalize can floor an undone dimension at what the first
+  // attempt already earned rather than applying the full undo penalty.
+  const beforeMerit = {};
+  (state.steps || []).forEach((s, i) => {
+    if (!s || s.inferred) return;
+    const a = state.answers[i];
+    if (!a) return;
+    beforeMerit[s.key] = a.partial ? PARTIAL_COMPOSITE_CREDIT : (a.isCorrect === true ? 1 : 0);
+  });
+  const frame = state.history.pop();
+  state.steps = frame.steps;
+  state.answers = frame.answers;
+  state.stepIdx = frame.stepIdx;
+  state.completed = frame.completed;
+  state.structuralImpossibility = frame.structuralImpossibility;
+  state.paradigmGap = frame.paradigmGap;
+  if (!state.forcedWrong || typeof state.forcedWrong !== 'object') state.forcedWrong = {};
+  if (!state.firstAttemptCredit || typeof state.firstAttemptCredit !== 'object') state.firstAttemptCredit = {};
+  const afterKeys = gradedAnsweredStepKeys(state.steps, state.answers);
+  // Count undos per dimension rather than a flat flag: each time a graded
+  // step's committed answer is rolled back, bump its tally so a wrong-first
+  // dimension's self-correction credit halves per undo (1 undo → 0.5, 2 →
+  // 0.25, …) when the walk completes. Record the FIRST rolled-back pick's merit
+  // (set once) as the floor finalize won't let the undo penalty drop below.
+  beforeKeys.forEach((k) => {
+    if (!afterKeys.has(k)) {
+      state.forcedWrong[k] = (Number(state.forcedWrong[k]) || 0) + 1;
+      if (!(k in state.firstAttemptCredit)) state.firstAttemptCredit[k] = beforeMerit[k] || 0;
+    }
+  });
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+function answerMorphologyStep(choiceIdx) {
+  if (!isParsingMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || !runtime.morphStepState || runtime.morphStepState.completed) return;
+  const state = runtime.morphStepState;
+  const step = state.steps[state.stepIdx];
+  if (!step) return;
+  pushMorphHistory(state);
+  const picked = step.choices[choiceIdx];
+  // Inferred follow-up steps are ungraded — they exist to converge on a
+  // single form for feedback, not to score the student. For graded steps
+  // we still use `acceptable` (multi-valid like aspect's continuous/
+  // undefined composite) with a fallback to `correct`.
+  const validSet = Array.isArray(step.acceptable) && step.acceptable.length
+    ? new Set(step.acceptable)
+    : new Set([step.correct]);
+  // Partial composite credit: naming one valid value of a multi-value case /
+  // gender form (e.g. 'nominative' for a 'nominative/accusative' neuter) is
+  // accepted — isCorrect true so it advances and the shuffler treats it as
+  // right — but flagged `partial` so finalizeMorphStepAttempt scores it 0.75
+  // and the strict 2/2 "known" test never passes (the form keeps coming back
+  // until the full composite is named). Full-composite / exact picks stay plain
+  // correct; values outside the composite stay plain wrong.
+  let isCorrect;
+  let partial = false;
+  if (step.inferred) {
+    isCorrect = null;
+  } else if (validSet.has(picked)) {
+    isCorrect = true;
+  } else if (isPartialCompositePick(step, picked)) {
+    isCorrect = true;
+    partial = true;
+  } else {
+    isCorrect = false;
+  }
+  state.answers[state.stepIdx] = { selectedIdx: choiceIdx, isCorrect, partial };
+
+  const answeredIdx = state.stepIdx;
+  const wasInferred = !!step.inferred;
+
+  // Structural impossibility check: once the picks collectively name a
+  // non-existent paradigm cell (e.g. future + imperative), there's nothing
+  // sensible to ask for the remaining downstream dimensions — the form
+  // doesn't exist, so person/number are moot. Stop the walk, record the
+  // reason, and let the summary explain why.
+  const struct = detectStructuralImpossibility(state);
+  if (struct) {
+    state.structuralImpossibility = struct;
+    state.stepIdx = state.steps.length;
+    state.completed = true;
+    finalizeMorphStepAttempt(card, state);
+    renderCard();
+    renderProgress();
+    saveState();
+    return;
+  }
+
+  // Paradigm value gap: the pick names a value the focused paradigm has no
+  // forms for (e.g. third person for ἐγώ/σύ). Like a structural impossibility,
+  // there's no form to resolve and no point asking the remaining dimensions —
+  // cut the walk off and let the summary explain the gap.
+  const gap = detectParadigmGap(state, card);
+  if (gap) {
+    state.paradigmGap = gap;
+    state.stepIdx = state.steps.length;
+    state.completed = true;
+    finalizeMorphStepAttempt(card, state);
+    renderCard();
+    renderProgress();
+    saveState();
+    return;
+  }
+
+  const injectedCount = maybeInjectInferredSteps(state, step.key, picked);
+  if (injectedCount > 0) {
+    // Defer this step's correctness reveal until the injected follow-ups
+    // are answered, so the student doesn't see "mood wrong" before they
+    // commit to the person/number that completes their parse.
+    state.answers[answeredIdx].deferred = true;
+    state.answers[answeredIdx].triggersInferred = injectedCount;
+  }
+  state.stepIdx += 1;
+  if (wasInferred) noteInferredAnswerSatisfied(state, answeredIdx);
+
+  if (state.stepIdx >= state.steps.length) {
+    state.completed = true;
+    finalizeMorphStepAttempt(card, state);
+  }
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+// Walks the answers collected so far and asks morph_steps whether the
+// (tense, mood) combination names a structurally impossible paradigm cell.
+// Returns { reason } or null. Ignores ungraded inferred steps (their picks
+// still inform the lookup, since e.g. the user might inject person before
+// the impossibility surfaces).
+function detectStructuralImpossibility(state) {
+  if (!state || !Array.isArray(state.steps)) return null;
+  const picked = {};
+  state.steps.forEach((s, idx) => {
+    if (!s) return;
+    const ans = state.answers[idx];
+    if (!ans || ans.selectedIdx < 0) return;
+    picked[s.key] = s.choices[ans.selectedIdx];
+  });
+  const reason = structuralImpossibilityReason(picked);
+  return reason ? { reason } : null;
+}
+
+// Walks the graded picks so far and asks morph_steps whether any names a value
+// the focused paradigm / lemma structurally lacks. Returns a gap descriptor
+// { dim, picked, short, note } or null. Two sources, both conservative:
+//   1) Person on a person-bearing nominal paradigm that lacks it — third
+//      person on ἐγώ/σύ — derived from the paradigm's own drilled forms
+//      (guarded to non-verbs so it can't misfire on undrilled conjugations).
+//   2) A tense/voice/mood from the lemma's hand-reviewed negative inventory
+//      (lemma_inventory.js) — e.g. the non-existent aorist of εἰμί.
+// Ignores ungraded inferred steps.
+function detectParadigmGap(state, card) {
+  if (!state || !Array.isArray(state.steps)) return null;
+  const picked = {};
+  state.steps.forEach((s, idx) => {
+    if (!s || s.inferred) return;
+    const ans = state.answers[idx];
+    if (!ans || ans.selectedIdx < 0) return;
+    picked[s.key] = s.choices[ans.selectedIdx];
+  });
+  if (state.paradigmPresentValues) {
+    const pGap = paradigmGapReason(picked, state.paradigmPresentValues, card && card.lemma);
+    if (pGap) return pGap;
+  }
+  const inv = (card && card.lemma && typeof window !== 'undefined' && window.LEMMA_INVENTORY)
+    ? window.LEMMA_INVENTORY[card.lemma] : null;
+  if (inv) {
+    const invGap = lemmaInventoryGapReason(picked, inv, card.lemma);
+    if (invGap) return invGap;
+  }
+  return null;
+}
+
+// English → Greek parsing answer. choiceIdx === -1 is the "I don't know"
+// row (counts as wrong). Grades the picked form against the cached correct
+// form, records a paradigm attempt across the enabled dims (the form encodes
+// every dimension, so a right pick is all-correct, a wrong pick all-wrong),
+// and shows feedback. Advancing is the normal Next button (navigate).
+function answerParsingReverseChoice(choiceIdx) {
+  if (!isParsingMode() || !runtime.parsingReverse) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || runtime.morphAnswerState.answered) return;
+  const st = runtime.parsingReverseState;
+  if (!st || st.cardId !== card.id || !Array.isArray(st.options)) return;
+  const picked = choiceIdx >= 0 ? st.options[choiceIdx] : null;
+  const isCorrect = picked != null && picked === st.correctForm;
+  runtime.morphAnswerState = {
+    answered: true,
+    revealed: true,
+    selfRated: true,
+    selectedIndex: choiceIdx,
+    isCorrect
+  };
+  recordParsingReverseAttempt(card, isCorrect);
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+// Fold a reverse-drill outcome into the per-paradigm stats the same way the
+// forward walk does: every enabled dimension the card actually carries gets
+// the shared correctness (1 if the right form was picked, else 0), and the
+// per-form recent tally updates so the 2/2 "known"/exclude-known machinery
+// keeps working across both directions.
+function recordParsingReverseAttempt(card, isCorrect) {
+  if (!card || !card.lemma) return;
+  const dims = parseAnswerDimensions(card.parsedAnswer || card.answer || '');
+  const enabled = getEnabledParsingDims();
+  const result = {};
+  ['tense', 'voice', 'mood', 'person', 'number', 'case', 'gender'].forEach((k) => {
+    if (!dims[k]) return;
+    if (enabled && enabled[k] === false) return;
+    result[k] = isCorrect ? 1 : 0;
+  });
+  if (!Object.keys(result).length) return;
+  if (!runtime.paradigmStepStats || typeof runtime.paradigmStepStats !== 'object') {
+    runtime.paradigmStepStats = { byLemma: {} };
+  }
+  recordParadigmAttempt(runtime.paradigmStepStats, card.lemma, result, { cardId: card.id });
+}
+
+function skipMorphologyStep() {
+  if (!isParsingMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || !runtime.morphStepState || runtime.morphStepState.completed) return;
+  const state = runtime.morphStepState;
+  const step = state.steps[state.stepIdx];
+  if (!step) return;
+  pushMorphHistory(state);
+  const isCorrect = step.inferred ? null : false;
+  state.answers[state.stepIdx] = { selectedIdx: -1, isCorrect };
+  const answeredIdx = state.stepIdx;
+  if (step.inferred) noteInferredAnswerSatisfied(state, answeredIdx);
+  state.stepIdx += 1;
+  if (state.stepIdx >= state.steps.length) {
+    state.completed = true;
+    finalizeMorphStepAttempt(card, state);
+  }
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+// "I give up" jumps straight to the summary, which removes the choice / "I
+// give up" rows — so the nav row's "Next →" button slides up to roughly where
+// the finger just tapped. On touch devices the browser re-dispatches that tap
+// as a click to whatever now sits at the point, hitting "Next →" and advancing
+// past the summary the moment it appears. Stamp a short shield window on give-
+// up and swallow any Next that fires inside it (see handleNavNext). 200ms is
+// long enough to eat the ghost click but short enough that a real "advance"
+// tap a beat later still goes through.
+const MORPH_GIVEUP_SHIELD_MS = 200;
+let morphGiveUpShieldUntil = 0;
+
+// "I give up" — bail on the whole form, not just the current dimension.
+// Every remaining graded step is marked wrong and the walk jumps straight to
+// the summary (all sections wrong). Inferred (ungraded) follow-up steps are
+// satisfied without scoring so the walk can complete cleanly. Contrast with
+// skipMorphologyStep ("I don't know"), which only fails the current step.
+function giveUpMorphologyStep() {
+  if (!isParsingMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || !runtime.morphStepState || runtime.morphStepState.completed) return;
+  const state = runtime.morphStepState;
+  pushMorphHistory(state);
+  for (let i = state.stepIdx; i < state.steps.length; i += 1) {
+    const step = state.steps[i];
+    if (!step) continue;
+    state.answers[i] = { selectedIdx: -1, isCorrect: step.inferred ? null : false };
+  }
+  state.stepIdx = state.steps.length;
+  state.completed = true;
+  finalizeMorphStepAttempt(card, state);
+  morphGiveUpShieldUntil = Date.now() + MORPH_GIVEUP_SHIELD_MS;
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+function finalizeMorphStepAttempt(card, state) {
+  if (!card || !card.lemma) return;
+  const forced = (state && state.forcedWrong) || {};
+  const firstAttemptCredit = (state && state.firstAttemptCredit) || {};
+  const dims = {};
+  state.steps.forEach((step, idx) => {
+    if (step.inferred) return; // ungraded — don't contribute to per-dim stats
+    const ans = state.answers[idx];
+    // Steps left unanswered because a structural impossibility ended the
+    // walk early aren't graded — the form doesn't exist, so person/number
+    // couldn't have been asked.
+    if (!ans) return;
+    const pickRight = !!ans.isCorrect;
+    // Scoring per dimension:
+    //   clean correct pick     → 1   (full credit)
+    //   partial composite pick → PARTIAL_COMPOSITE_CREDIT (0.75) — named one
+    //                            valid value of a multi-value case/gender/aspect form
+    //   reattempted via undo   → see the credit-floor below
+    //   wrong pick             → 0
+    // Any value below 1 also keeps the form out of "known": evaluateRecent
+    // Attempt counts a dimension correct only when it's exactly 1, so a
+    // reattempt OR a partial composite fails the 2/2 exclude-known test (the
+    // whole parse reads as not-yet-known) while still scoring fractional credit
+    // in the accuracy stats.
+    //
+    // Undo credit-floor: an undo can never drop a dimension below the credit
+    // its FIRST attempt earned (1 if it was clean-correct, 0.75 if partial),
+    // so "correct → undo" stays full (an accidental/curious undo of a right
+    // answer isn't penalised) and form-parity is kept (undo stays available
+    // everywhere). A wrong first attempt floors at 0, so "undo → correct"
+    // earns only the self-correction credit 0.5^undos — half for one undo,
+    // a quarter for two, … It's cheat-proof: the floor is what you actually
+    // picked first, never more. And a final WRONG pick (the "alternate"
+    // carried through to the end) scores 0 regardless of what came before.
+    const undos = Number(forced[step.key]) || 0;
+    let credit;
+    if (undos > 0) {
+      if (!pickRight) credit = 0;
+      else credit = Math.max(Number(firstAttemptCredit[step.key]) || 0, Math.pow(0.5, undos));
+    } else if (ans.partial) {
+      credit = PARTIAL_COMPOSITE_CREDIT; // one value of a multi-value form
+    } else {
+      credit = pickRight ? 1 : 0;
+    }
+    dims[step.key] = credit;
+  });
+  // Stash the computed per-dimension credit so the parse summary's marks and
+  // colours match the recorded score exactly (full → ✓, 0.75 → †, the small
+  // undo-recovery → *, 0 → ✗).
+  state.finalCredit = { ...dims };
+  if (!runtime.paradigmStepStats || typeof runtime.paradigmStepStats !== 'object') {
+    runtime.paradigmStepStats = { byLemma: {} };
+  }
+  recordParadigmAttempt(runtime.paradigmStepStats, card.lemma, dims, {
+    cardId: card.id
+  });
+}
+
+// ─── Lookup mode ────────────────────────────────────────────────────────
+//
+// The reverse of the parsing drill: the student selects a focused paradigm and
+// walks the dimension breadcrumbs to build (conjugate / decline) any form, and
+// the tool resolves the picks to the matching Greek. Deck-independent and
+// off-the-record (no stats). The pool covers EVERY legitimate form of the
+// paradigm — built at the widest chapter scope with optional + extra forms
+// folded in — so a form the student hasn't drilled is still lookable.
+
+// The concrete lemma the lookup walk explores: the focused paradigm, with a
+// category-shuffle sentinel (or an empty focus) resolved to a real lemma so
+// the walk always has exactly one paradigm to read. Stem-recall lemmas are
+// handled by renderCard's redirect ahead of the lookup branch.
+function getLookupFocusLemma() {
+  if (!isParsingMode()) return null;
+  let sel = runtime.morphFocusedParadigm;
+  const category = parseCategoryShuffleValue(sel);
+  if (category) {
+    const inCat = listAvailableParadigms(getParadigmFocusScopeKeys())
+      .filter((p) => p.category === category);
+    sel = inCat.length ? inCat[0].lemma : null;
+  }
+  if (!sel) sel = chooseDefaultFocusedParadigm(getParadigmFocusScopeKeys());
+  return sel || null;
+}
+
+// Build (and cache on morphLookupState) the lookup form pool for a lemma. Full
+// chapter scope (['20']) = all legitimate morphs regardless of the parsing
+// chapter gate; optional + syncretic + extra forms folded in. Cached by lemma
+// so breadcrumb picks don't rebuild it; picks survive while the lemma is
+// unchanged and reset when it switches.
+function getLookupFormsForLemma(lemma) {
+  if (!lemma) return [];
+  const poolKey = `lookup::${lemma}`;
+  const st = runtime.morphLookupState;
+  if (st && st.poolKey === poolKey && Array.isArray(st.pool)) return st.pool;
+  const cards = getCardsForFocusedParadigm(PARSING_FULL_SCOPE_KEYS, lemma, {
+    includeOptional: true,
+    includeSyncretic: true
+  });
+  const pool = buildLookupPool(cards, lemma);
+  runtime.morphLookupState = {
+    lemma,
+    poolKey,
+    pool,
+    picks: (st && st.lemma === lemma && st.picks && typeof st.picks === 'object') ? st.picks : {}
+  };
+  return pool;
+}
+
+// Seed morphLookupState for the currently focused lemma before a pick handler
+// mutates its picks (render seeds it too, but a handler can fire first).
+function ensureLookupState() {
+  const lemma = getLookupFocusLemma();
+  if (!lemma) return null;
+  if (!runtime.morphLookupState || runtime.morphLookupState.poolKey !== `lookup::${lemma}`) {
+    getLookupFormsForLemma(lemma);
+  }
+  return runtime.morphLookupState;
+}
+
+// Toggling lookup on: pin the focused paradigm to a concrete lemma (not a
+// category-shuffle sentinel or empty) so the dropdown and the walk agree, and
+// clear stale picks. Called from the navigation toggle.
+function prepareLookupFocus() {
+  const lemma = getLookupFocusLemma();
+  if (lemma) runtime.morphFocusedParadigm = lemma;
+  runtime.morphLookupState = { lemma: null, poolKey: '', pool: [], picks: {} };
+}
+
+// Pick a value for the current breadcrumb dimension. Drops the dim + any later
+// picks first (defensive) so the walk stays a clean prefix, then records it.
+function pickLookupDimension(dim, value) {
+  if (!isParsingMode() || !runtime.parsingLookup || !dim) return;
+  noteStudyInteraction();
+  const state = ensureLookupState();
+  if (!state) return;
+  const next = truncatePicksFrom(state.picks, dim);
+  next[dim] = value;
+  state.picks = next;
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+// Tap a decided breadcrumb chip: drop that dimension and everything after it
+// so the student re-picks from there.
+function editLookupDimension(dim) {
+  if (!isParsingMode() || !runtime.parsingLookup || !dim) return;
+  noteStudyInteraction();
+  const state = ensureLookupState();
+  if (!state) return;
+  state.picks = truncatePicksFrom(state.picks, dim);
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+// Clear every pick — back to the first breadcrumb.
+function resetLookup() {
+  if (!isParsingMode() || !runtime.parsingLookup) return;
+  noteStudyInteraction();
+  const state = ensureLookupState();
+  if (!state) return;
+  state.picks = {};
+  renderCard();
+  renderProgress();
+  saveState();
+}
+
+function getModeDescription() {
+  if (isMorphologyMode()) return 'Grammar Quiz';
+  if (isParsingMode()) return 'Step-by-step Parsing';
+  if (isReaderMode()) return 'Reader';
+  return 'Vocabulary Flashcards';
+}
+
+function resolveThemeMode(mode = runtime.themeMode) {
+  if (mode === 'light' || mode === 'dark') return mode;
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return prefersDark ? 'dark' : 'light';
+}
+
+function applyThemeMode(mode = runtime.themeMode, persist = true) {
+  runtime.themeMode = mode === 'light' || mode === 'dark' ? mode : 'system';
+  const resolved = resolveThemeMode(runtime.themeMode);
+  document.documentElement.setAttribute('data-theme', resolved);
+
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.setAttribute('content', resolved === 'light' ? '#f4efe3' : '#0e0f14');
+
+  const storage = getStorage();
+  if (persist && storage) storage.setItem(THEME_STORAGE_KEY, runtime.themeMode);
+  syncThemeButtons();
+}
+
+function syncThemeButtons() {
+  const systemBtn = document.getElementById('themeSystemBtn');
+  const darkBtn = document.getElementById('themeDarkBtn');
+  const lightBtn = document.getElementById('themeLightBtn');
+  if (systemBtn) systemBtn.classList.toggle('active', runtime.themeMode === 'system');
+  if (darkBtn) darkBtn.classList.toggle('active', runtime.themeMode === 'dark');
+  if (lightBtn) lightBtn.classList.toggle('active', runtime.themeMode === 'light');
+}
+
+function setThemeMode(mode) {
+  applyThemeMode(mode, true);
+}
+
+function initializeThemeMode() {
+  const storage = getStorage();
+  const savedMode = storage ? storage.getItem(THEME_STORAGE_KEY) : null;
+  runtime.themeMode = savedMode === 'light' || savedMode === 'dark' || savedMode === 'system' ? savedMode : 'system';
+  applyThemeMode(runtime.themeMode, false);
+
+  if (window.matchMedia) {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (runtime.themeMode === 'system') applyThemeMode('system', false);
+    };
+    if (typeof media.addEventListener === 'function') media.addEventListener('change', handleChange);
+    else if (typeof media.addListener === 'function') media.addListener(handleChange);
+  }
+}
+
+const FONT_FAMILY_OPTIONS = ['serif', 'sans'];
+const TEXT_SIZE_OPTIONS = ['medium', 'large', 'x-large'];
+
+function applyFontFamily(value = runtime.fontFamily, persist = true) {
+  runtime.fontFamily = FONT_FAMILY_OPTIONS.includes(value) ? value : 'serif';
+  document.documentElement.setAttribute('data-font-family', runtime.fontFamily);
+  const storage = getStorage();
+  if (persist && storage) storage.setItem(FONT_FAMILY_STORAGE_KEY, runtime.fontFamily);
+  syncFontFamilyButtons();
+}
+
+function syncFontFamilyButtons() {
+  const serifBtn = document.getElementById('fontSerifBtn');
+  const sansBtn = document.getElementById('fontSansBtn');
+  if (serifBtn) serifBtn.classList.toggle('active', runtime.fontFamily === 'serif');
+  if (sansBtn) sansBtn.classList.toggle('active', runtime.fontFamily === 'sans');
+}
+
+function setFontFamily(value) {
+  applyFontFamily(value, true);
+  // Swapping serif/sans changes glyph metrics, so the layout reflows and a
+  // button can slide under the finger before the iOS ghost click lands. Same
+  // document-wide guard the modal closers use.
+  shieldClicksBriefly();
+}
+
+function initializeFontFamily() {
+  const storage = getStorage();
+  const saved = storage ? storage.getItem(FONT_FAMILY_STORAGE_KEY) : null;
+  runtime.fontFamily = FONT_FAMILY_OPTIONS.includes(saved) ? saved : 'serif';
+  applyFontFamily(runtime.fontFamily, false);
+}
+
+function applyTextSize(value = runtime.textSize, persist = true) {
+  runtime.textSize = TEXT_SIZE_OPTIONS.includes(value) ? value : 'medium';
+  document.documentElement.setAttribute('data-text-size', runtime.textSize);
+  const storage = getStorage();
+  if (persist && storage) storage.setItem(TEXT_SIZE_STORAGE_KEY, runtime.textSize);
+  syncTextSizeButtons();
+}
+
+function syncTextSizeButtons() {
+  const map = {
+    'medium': 'textSizeMediumBtn',
+    'large': 'textSizeLargeBtn',
+    'x-large': 'textSizeXLargeBtn'
+  };
+  for (const [size, id] of Object.entries(map)) {
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.toggle('active', runtime.textSize === size);
+  }
+}
+
+function setTextSize(value) {
+  applyTextSize(value, true);
+  // Changing text size grows the glyphs and reflows spacing, so a button can
+  // slide under the finger between the tap and the iOS ghost click ~300 ms
+  // later. Shield clicks document-wide to absorb that stray press.
+  shieldClicksBriefly();
+}
+
+function initializeTextSize() {
+  const storage = getStorage();
+  const saved = storage ? storage.getItem(TEXT_SIZE_STORAGE_KEY) : null;
+  runtime.textSize = TEXT_SIZE_OPTIONS.includes(saved) ? saved : 'medium';
+  applyTextSize(runtime.textSize, false);
+}
+
+// Populate the parsing-mode chapter dropdown (1..20) and reflect the
+// current runtime.parsingChapter. Only relevant in parsing mode — the
+// row is hidden elsewhere by syncLayoutVisibility.
+function syncParsingChapterUi() {
+  const select = document.getElementById('parsingChapterSelect');
+  if (!select) return;
+  if (!isParsingMode()) return;
+  const chapter = getParsingChapter();
+  if (!select.options.length) {
+    // "Build mode" heads the list (before Chapter 1) as the dropdown face of the
+    // Lookup-mode toggle — see setParsingChapter.
+    const opts = [`<option value="${PARSING_BUILD_MODE_VALUE}">Build mode</option>`];
+    for (let ch = 1; ch <= 20; ch++) {
+      opts.push(`<option value="${ch}">Chapter ${ch}</option>`);
+    }
+    select.innerHTML = opts.join('');
+  }
+  // In Lookup mode the dropdown shows "Build mode"; otherwise it tracks the
+  // current chapter. (Turning the toggle on/off flows through here via
+  // syncToggleButtons, so the dropdown follows the toggle and vice versa.)
+  select.value = runtime.parsingLookup ? PARSING_BUILD_MODE_VALUE : String(chapter);
+}
+
+// Sentinel value for the "All paradigms through selected chapter" dropdown
+// option. Defined locally (NOT imported from navigation.js) on purpose: ES-module
+// import paths carry no `?v=` cache-bust, so during a service-worker update the
+// new main.js can momentarily load against an OLD cached navigation.js. Importing
+// a brand-new export across that boundary throws a SyntaxError that wedges the
+// whole app (frozen page, no update prompt). Keep this string identical to the
+// `PARSING_SHUFFLE_ALL_VALUE` export in navigation.js — both must match.
+const PARSING_SHUFFLE_ALL_VALUE = '__shuffleAllToChapter__';
+
+// Populate the primary focused-paradigm dropdown from the current selection
+// when parsing mode is active, and resync runtime.morphFocusedParadigm if
+// the current pick is no longer available (e.g. user changed chapters).
+function syncParadigmFocusUi() {
+  const select = document.getElementById('paradigmFocusSelectPrimary');
+  if (!select) return;
+  if (!isParsingMode()) return;
+  // Build mode is not chapter-gated — widen to the full paradigm scope so every
+  // paradigm is focusable regardless of the selected chapter.
+  const aggregateKeys = getParadigmFocusScopeKeys();
+  // Stem-recall drills ("Second-aorist stems", "Liquid-stem futures") have no
+  // parse dimensions, so they stay in the dropdown as stem-recall links that
+  // render a redirect card to the matching flip-card supplemental (see
+  // PARSING_INCOMPATIBLE_LEMMAS in paradigm_focus.js). The parseable liquid-future
+  // paradigms (μένω, κρίνω) are listed separately under "Verbs · liquid
+  // future", so nothing needs hiding or substituting here.
+  const PARSING_DROPDOWN_SUBSTITUTIONS = {};
+  const isHiddenFromParsing = (lemma) => Object.prototype.hasOwnProperty.call(PARSING_DROPDOWN_SUBSTITUTIONS, lemma);
+  const available = listAvailableParadigms(aggregateKeys).filter((p) => !isHiddenFromParsing(p.lemma));
+  if (!available.length) {
+    select.innerHTML = '<option value="">No paradigms in current selection</option>';
+    select.value = '';
+    return;
+  }
+  // Render with native <optgroup>s — categories like "Verbs · standard
+  // ω-pattern" head sections of lemmas, so the user can scan by paradigm
+  // type instead of reading a flat alphabetical list. Categories with two or
+  // more in-scope lemmas also get a "shuffle all of type" entry at the head
+  // of their group (single-lemma categories don't — that would just equal
+  // picking the lemma).
+  const grouped = listAvailableParadigmsByCategory(aggregateKeys)
+    .map((g) => ({ category: g.category, lemmas: g.lemmas.filter((p) => !isHiddenFromParsing(p.lemma)) }))
+    .filter((g) => g.lemmas.length);
+  const shuffleableCategories = new Set(grouped.filter((g) => g.lemmas.length >= 2).map((g) => g.category));
+
+  // "All paradigms through selected chapter" heads the list as the dropdown
+  // face of the shuffle-all toggle (see setMorphFocusedParadigm / the
+  // PARSING_SHUFFLE_ALL_VALUE sentinel) — mirrors the chapter dropdown's "Build
+  // mode" entry driving Lookup mode.
+  const sentinelOpt = `<option value="${PARSING_SHUFFLE_ALL_VALUE}">All paradigms through selected chapter</option>`;
+  const groupsHtml = grouped.map((g) => {
+    const shuffleOpt = shuffleableCategories.has(g.category)
+      ? `<option value="${escapeAttr(makeCategoryShuffleValue(g.category))}">${escapeAttr(categoryShuffleLabel(g.category))}</option>`
+      : '';
+    const opts = g.lemmas
+      .map((p) => `<option value="${escapeAttr(p.lemma)}">${escapeAttr(p.displayLabel)}</option>`)
+      .join('');
+    return `<optgroup label="${escapeAttr(g.category)}">${shuffleOpt}${opts}</optgroup>`;
+  }).join('');
+
+  // Shuffle-all on: the dropdown stays visible but is the toggle's face — show
+  // the sentinel selected and leave runtime.morphFocusedParadigm untouched (the
+  // toggle owns the multi-paradigm deck). Picking a concrete paradigm drops back
+  // out of shuffle-all via setMorphFocusedParadigm.
+  if (runtime.parsingShuffleAll) {
+    select.innerHTML = sentinelOpt + groupsHtml;
+    select.value = PARSING_SHUFFLE_ALL_VALUE;
+    return;
+  }
+
+  const currentValue = runtime.morphFocusedParadigm;
+  const currentCategory = parseCategoryShuffleValue(currentValue);
+  let chosen;
+  if (currentCategory) {
+    // A "shuffle all of type" selection stays put while its category still
+    // has two or more shuffleable lemmas in scope; otherwise it falls back to
+    // the first concrete lemma (e.g. the chapter dropped below where the type
+    // first appears).
+    chosen = shuffleableCategories.has(currentCategory) ? currentValue : available[0].lemma;
+  } else {
+    const substitutedCurrent = isHiddenFromParsing(currentValue)
+      ? PARSING_DROPDOWN_SUBSTITUTIONS[currentValue]
+      : currentValue;
+    const stillAvailable = substitutedCurrent && available.some((p) => p.lemma === substitutedCurrent);
+    chosen = stillAvailable ? substitutedCurrent : available[0].lemma;
+  }
+  if (chosen !== currentValue) {
+    runtime.morphFocusedParadigm = chosen;
+    rebuildMorphDeckForStepMode();
+  }
+  select.innerHTML = sentinelOpt + groupsHtml;
+  select.value = chosen;
+}
+
+// Label for a category's "shuffle all of type" dropdown entry. The optgroup
+// heading already names the category, so this reads as an action; we strip the
+// "Nouns · " style prefix to the subtype when present (→ "3rd declension"),
+// else use the whole category (→ "Adjectives").
+function categoryShuffleLabel(category) {
+  const text = String(category || '');
+  const sub = text.includes('·') ? text.split('·').pop().trim() : text;
+  return `↯ Shuffle all — ${sub}`;
+}
+
+function escapeAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Populate the "custom paradigm set" checkbox selector from the current
+// selection's in-scope paradigms, grouped by category to mirror the
+// focused-paradigm dropdown. Each checkbox reflects (and writes back via its
+// onchange) runtime.parsingCustomParadigms[lemma]. The list is hidden outside
+// parsing mode / when the toggle is off (syncLayoutVisibility), so this only
+// needs to keep the markup current. Scroll position is preserved across the
+// re-render so ticking a box deep in the list doesn't jump it to the top.
+function syncParsingCustomParadigmsUi() {
+  const list = document.getElementById('parsingCustomParadigmsList');
+  const countEl = document.getElementById('parsingCustomParadigmsCount');
+  if (!list) return;
+  if (!isParsingMode()) return;
+  const aggregateKeys = getAggregateSelectionKeys();
+  // Drop stem-recall pseudo-lemmas (second-aorist / liquid-future): they're
+  // redirect-only drills with no parse to pool, so a checkbox for them would be
+  // inert. They still appear in the focused-paradigm dropdown for the redirect
+  // card; this checklist is parseable paradigms only. Empty groups fall away.
+  const grouped = listAvailableParadigmsByCategory(aggregateKeys)
+    .map((g) => ({ ...g, lemmas: g.lemmas.filter((p) => !isParsingIncompatibleLemma(p.lemma)) }))
+    .filter((g) => g.lemmas.length);
+  const selected = runtime.parsingCustomParadigms || {};
+  if (!grouped.length) {
+    list.innerHTML = '<div class="paradigm-custom-empty">No paradigms in the current selection. Choose a chapter (or raise the parsing chapter) to pick paradigms.</div>';
+    if (countEl) countEl.textContent = 'none selected';
+    return;
+  }
+  let checkedInScope = 0;
+  const html = grouped.map((g) => {
+    const items = g.lemmas.map((p) => {
+      const isChecked = !!selected[p.lemma];
+      if (isChecked) checkedInScope += 1;
+      return `<label class="paradigm-custom-item">`
+        + `<input type="checkbox" value="${escapeAttr(p.lemma)}"${isChecked ? ' checked' : ''} onchange="toggleParsingCustomParadigm(this.value, this.checked)">`
+        + `<span class="paradigm-custom-item-text">${escapeAttr(p.displayLabel)}</span>`
+        + `</label>`;
+    }).join('');
+    return `<div class="paradigm-custom-group">`
+      + `<div class="paradigm-custom-group-label">${escapeAttr(g.category)}</div>`
+      + `<div class="paradigm-custom-group-items">${items}</div>`
+      + `</div>`;
+  }).join('');
+  const prevScroll = list.scrollTop;
+  list.innerHTML = html;
+  list.scrollTop = prevScroll;
+  if (countEl) countEl.textContent = checkedInScope ? `${checkedInScope} selected` : 'none selected';
+}
+
+// ── Per-toggle info modal ────────────────────────────────────────────────
+// Each Advanced-settings master toggle gets a small (i) button that opens a
+// modal describing what it does — sourced from the toggle's own `title`, so
+// there's one description that also serves as the desktop tooltip and, more
+// importantly, surfaces on touch devices where hover tooltips never appear.
+// The per-value exclude sub-filters (dimValueFilter_* / optionalFilter_*) are
+// skipped: their labels already name the value (e.g. "Aorist (Ch. 6)").
+function installToggleInfoButtons() {
+  // The Advanced-settings master toggles live in two containers: most in the
+  // controls bar, plus the promoted Lookup-mode toggle that now sits up under
+  // Text size. Both get the same (i) button + capture-phase text guard.
+  [document.getElementById('controlsBar'), document.getElementById('parsingLookupRow')]
+    .filter(Boolean)
+    .forEach(installToggleInfoForContainer);
+}
+
+function installToggleInfoForContainer(bar) {
+  bar.querySelectorAll('.toggle-label').forEach(label => {
+    if (/^(dimValueFilter_|optionalFilter_)/.test(label.id)) return;
+    if (!label.getAttribute('title')) return;
+    if (label.querySelector('.toggle-info')) return; // idempotent
+    const info = document.createElement('span');
+    info.className = 'toggle-info';
+    info.setAttribute('role', 'button');
+    info.setAttribute('tabindex', '0');
+    info.setAttribute('aria-label', 'What this setting does');
+    info.textContent = 'i';
+    const open = (e) => { e.preventDefault(); e.stopPropagation(); showToggleInfo(label); };
+    info.addEventListener('click', open);
+    info.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+    const textEl = label.querySelector('.toggle-text');
+    if (textEl) textEl.insertAdjacentElement('afterend', info);
+    else label.appendChild(info);
+  });
+
+  // Only the switch should flip a toggle — a tap on the label *text* must not,
+  // so the small (i) sitting in that text run is easy to hit without catching
+  // the toggle. A capture-phase guard swallows clicks that land on a
+  // `.toggle-text` before the toggle's own inline onclick runs. The (i) keeps
+  // its own handler (we bail for it), and keyboard activation (Enter/Space,
+  // whose target is the button itself, not the text) still toggles.
+  if (!bar.dataset.textGuard) {
+    bar.dataset.textGuard = '1';
+    bar.addEventListener('click', (e) => {
+      if (e.target.closest('.toggle-info')) return;
+      const text = e.target.closest('.toggle-text');
+      if (text && bar.contains(text)) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    }, true);
+  }
+}
+
+function showToggleInfo(label) {
+  const overlay = document.getElementById('toggleInfoOverlay');
+  if (!label || !overlay) return;
+  const textEl = label.querySelector('.toggle-text');
+  const titleEl = document.getElementById('toggleInfoTitle');
+  const bodyEl = document.getElementById('toggleInfoBody');
+  if (titleEl) titleEl.textContent = textEl ? textEl.textContent.trim() : 'Setting';
+  if (bodyEl) bodyEl.textContent = label.getAttribute('title') || '';
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closeToggleInfoModal() {
+  const overlay = document.getElementById('toggleInfoOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  if (!document.querySelector('.consent-overlay.show')) document.body.classList.remove('modal-open');
+  // Absorb the iOS ghost click (~300 ms after the "Got it" tap) so it can't
+  // land on the Advanced-settings toggle now sitting under the finger. Same
+  // guard every other modal close handler uses.
+  shieldClicksBriefly();
+}
+
+function isToggleInfoModalOpen() {
+  const overlay = document.getElementById('toggleInfoOverlay');
+  return !!overlay && overlay.classList.contains('show');
+}
+
+function openContactAuthorModal() {
+  const overlay = document.getElementById('contactAuthorOverlay');
+  if (!overlay) return;
+  overlay.classList.add('show');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closeContactAuthorModal() {
+  const overlay = document.getElementById('contactAuthorOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  if (!document.querySelector('.consent-overlay.show')) document.body.classList.remove('modal-open');
+  // Absorb the iOS ghost click after the "Close" tap, same guard every other
+  // modal close handler uses.
+  shieldClicksBriefly();
+}
+
+function isContactAuthorModalOpen() {
+  const overlay = document.getElementById('contactAuthorOverlay');
+  return !!overlay && overlay.classList.contains('show');
+}
+
+// Open a "Contact the author" link reliably from an installed PWA. Two things
+// break a plain <a target="_blank"> there:
+//   1. In a standalone/installed PWA (notably iOS home-screen apps) WebKit
+//      silently swallows the "open in a new tab" default of a target="_blank"
+//      link — there's no browser tab to open into — so the tap does nothing.
+//   2. The touch-tap bridge (touchTapBridge.js) treats only buttons and
+//      [onclick] elements as tap targets. A bare link in the modal matches
+//      neither, so the bridge routed the synthetic tap up to the nearest
+//      match — the overlay's [onclick] close handler — and tapping a link
+//      CLOSED the modal instead of following it (while suppressing the link's
+//      own native click).
+// Giving each link its own onclick makes it a first-class tap target (fixes 2)
+// and routes the open through window.open() from inside the tap gesture, which
+// iOS honours where the bare target="_blank" default does not (fixes 1). http
+// links open in a new context; mailto:/tel: hand off to the OS handler in place.
+// Modified / non-primary clicks fall through to the browser's native handling.
+function openExternalLink(anchor, event) {
+  if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0)) {
+    return true; // let the browser open-in-new-tab / save-link / etc. natively
+  }
+  const href = anchor && anchor.href;
+  if (!href) return true;
+  if (event && typeof event.preventDefault === 'function') event.preventDefault();
+  if (/^https?:/i.test(href)) {
+    let opened = null;
+    try { opened = window.open(href, '_blank'); } catch (_) {}
+    if (opened) {
+      try { opened.opener = null; } catch (_) {} // reverse-tabnabbing guard
+    } else {
+      window.location.href = href; // popup blocked → open in place (swipe back to return)
+    }
+  } else {
+    // mailto:, tel:, etc. — hand off to the OS handler without leaving the page.
+    window.location.href = href;
+  }
+  return false;
+}
+
+// Persist the review-panel due-histogram's collapsed state. Reuses the
+// already-persisted runtime.analyticsCollapsed map (so no extra save field is
+// needed); the analytics-overlay copy is handled by that overlay's own
+// collapse-sync. Called from the histogram <details>'s inline ontoggle.
+function onDueHistogramToggle(key, el) {
+  if (!key || !el) return;
+  if (!runtime.analyticsCollapsed || typeof runtime.analyticsCollapsed !== 'object') runtime.analyticsCollapsed = {};
+  runtime.analyticsCollapsed[key] = !el.open;
+  saveState();
+}
+
+function syncToggleButtons() {
+  const requiredSwitch  = document.getElementById('requiredBtn');
+  // Mirror of the "Starred words only" toggle that also lives in the study
+  // selector (under "Deselect all"); both drive the same runtime.requiredOnly.
+  const requiredSelectorSwitch = document.getElementById('requiredBtnSelector');
+  const shuffleSwitch   = document.getElementById('shuffleBtn');
+  const directionSwitch = document.getElementById('directionBtn');
+  const spacedSwitch    = document.getElementById('spacedBtn');
+  const hardReviewSwitch = document.getElementById('hardReviewBtn');
+  const splitSelectionSwitch = document.getElementById('splitSelectionBtn');
+  const selfCheckBtn    = document.getElementById('selfCheckBtn');
+  const aspectStepSwitch = document.getElementById('aspectStepBtn');
+  const DIM_TOGGLE_KEYS = ['tense', 'voice', 'mood', 'person', 'number', 'case', 'gender'];
+  const dimStepSwitches = Object.fromEntries(DIM_TOGGLE_KEYS.map(k => [k, document.getElementById(`${k}StepBtn`)]));
+  const dimStepToggles = Object.fromEntries(DIM_TOGGLE_KEYS.map(k => [k, document.getElementById(`${k}StepToggle`)]));
+  const optionalFormsSwitch = document.getElementById('optionalFormsBtn');
+  const optionalFormsToggle = document.getElementById('optionalFormsToggle');
+  const OPTIONAL_FILTER_KEYS = ['imperative', 'subjunctive', 'optative', 'infinitive', 'participle', 'thirdPerson', 'futureTense', 'perfectTense'];
+  const optionalFilterSwitches = Object.fromEntries(OPTIONAL_FILTER_KEYS.map(k => [k, document.getElementById(`optionalFilter_${k}_Btn`)]));
+  const optionalFilterToggles  = Object.fromEntries(OPTIONAL_FILTER_KEYS.map(k => [k, document.getElementById(`optionalFilter_${k}_Toggle`)]));
+  // Per-value sub-filters under each parsing dim. Keys mirror DIM_VALUE_FILTER_VALUES
+  // in navigation.js; the IDs are dimValueFilter_<dim>_<value>_Toggle/Btn.
+  // Aspect's 'continuousUndefined' is a UI-only key — flipping it sets BOTH
+  // dimValueFilters.aspect.continuous and .undefined to the same state.
+  const DIM_VALUE_FILTER_VALUES = {
+    aspect: ['continuousUndefined', 'completed'],
+    tense:  ['present', 'future', 'imperfect', 'aorist', 'perfect', 'pluperfect'],
+    voice:  ['active', 'middle', 'passive'],
+    mood:   ['indicative', 'subjunctive', 'optative', 'imperative', 'infinitive', 'participle'],
+    person: ['first', 'second', 'third'],
+    number: ['singular', 'plural'],
+    case:   ['nominative', 'accusative', 'genitive', 'dative', 'vocative'],
+    gender: ['masculine', 'feminine', 'neuter']
+  };
+  // Same UI-key → underlying-canonical-value mapping as
+  // dimFilterUnderlyingValues in navigation.js. Kept inline rather than
+  // imported so syncToggleButtons doesn't pull in navigation.js's deck
+  // rebuild logic just to read a label.
+  const dimFilterUnderlying = (dim, value) => (
+    (dim === 'aspect' && value === 'continuousUndefined') ? ['continuous', 'undefined'] : [value]
+  );
+  const dailyResetSwitch = document.getElementById('unspacedDailyResetBtn');
+  const shuffleToggle   = document.getElementById('shuffleToggle');
+  const requiredToggle  = document.getElementById('requiredToggle');
+  const requiredToggleSelector = document.getElementById('requiredToggleSelector');
+  const directionToggle = document.getElementById('directionToggle');
+  const spacedToggle    = document.getElementById('spacedToggle');
+  const hardReviewToggle = document.getElementById('hardReviewToggle');
+  const splitSelectionToggle = document.getElementById('splitSelectionToggle');
+  const selfCheckToggle = document.getElementById('selfCheckToggle');
+  const aspectStepToggle = document.getElementById('aspectStepToggle');
+  const dailyResetToggle = document.getElementById('unspacedDailyResetToggle');
+  const modeVocabBtn    = document.getElementById('modeVocabBtn');
+  const modeMorphBtn    = document.getElementById('modeMorphBtn');
+  const modeReaderBtn   = document.getElementById('modeReaderBtn');
+  const modeShortcutVocabBtn = document.getElementById('modeShortcutVocabBtn');
+  const modeShortcutMorphBtn = document.getElementById('modeShortcutMorphBtn');
+  const modeShortcutReaderBtn = document.getElementById('modeShortcutReaderBtn');
+  const resetDeckBtn = document.getElementById('resetDeckBtn');
+
+  if (shuffleSwitch)   shuffleSwitch.classList.toggle('on',   !!runtime.shuffled);
+  if (requiredSwitch)  requiredSwitch.classList.toggle('on',  !!runtime.requiredOnly);
+  if (requiredSelectorSwitch) requiredSelectorSwitch.classList.toggle('on', !!runtime.requiredOnly);
+  if (directionSwitch) directionSwitch.classList.toggle('on', !!runtime.directionToGreek);
+  if (spacedSwitch)    spacedSwitch.classList.toggle('on',    !!runtime.spacedRepetition);
+  if (hardReviewSwitch) hardReviewSwitch.classList.toggle('on', !!runtime.hardVocabReviewMode);
+  const stemNotesSwitch = document.getElementById('stemNotesBtn');
+  if (stemNotesSwitch) stemNotesSwitch.classList.toggle('on', runtime.stemNotes !== false);
+  const stemNotesToggleEl = document.getElementById('stemNotesToggle');
+  if (stemNotesToggleEl) stemNotesToggleEl.setAttribute('aria-checked', runtime.stemNotes !== false ? 'true' : 'false');
+  const irregularTenseSwitch = document.getElementById('irregularTenseBtn');
+  if (irregularTenseSwitch) irregularTenseSwitch.classList.toggle('on', runtime.irregularTense !== false);
+  const irregularTenseToggleEl = document.getElementById('irregularTenseToggle');
+  if (irregularTenseToggleEl) irregularTenseToggleEl.setAttribute('aria-checked', runtime.irregularTense !== false ? 'true' : 'false');
+  let irregularOnCount = 0;
+  IRREGULAR_CARD_CONFIGS.forEach(c => {
+    const on = isIrregularCardEnabled(c.tag, runtime.selectedKeys, runtime.irregularCards);
+    if (on) irregularOnCount += 1;
+    const sw = document.getElementById(`irregularCards_${c.tag}_Btn`);
+    if (sw) sw.classList.toggle('on', on);
+    const toggleEl = document.getElementById(`irregularCards_${c.tag}_Toggle`);
+    if (toggleEl) toggleEl.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  // Surface how many variant-form toggles are active while the section is
+  // collapsed, so the default-on-by-chapter state isn't hidden.
+  const variantFormsCount = document.getElementById('variantFormsCount');
+  if (variantFormsCount) variantFormsCount.textContent = irregularOnCount ? ` · ${irregularOnCount} on` : '';
+  // Spacing cadence (inverted toggle): ON = intensive (2-month course),
+  // OFF = relaxed (8-month, the default for new users). Old users keep
+  // intensive via their persisted value / the DEFAULT_SRS_CADENCE fallback.
+  const cadenceIntensive = runtime.spacingCadence === 'intensive';
+  const cadenceSwitch = document.getElementById('cadenceBtn');
+  if (cadenceSwitch) cadenceSwitch.classList.toggle('on', cadenceIntensive);
+  const cadenceToggleEl = document.getElementById('cadenceToggle');
+  if (cadenceToggleEl) cadenceToggleEl.setAttribute('aria-checked', cadenceIntensive ? 'true' : 'false');
+  if (splitSelectionSwitch) splitSelectionSwitch.classList.toggle('on', !!runtime.splitSelection);
+  if (selfCheckBtn)    selfCheckBtn.classList.toggle('on',    !!runtime.morphSelfCheck && isMorphologyMode());
+  if (aspectStepSwitch) aspectStepSwitch.classList.toggle('on', runtime.aspectStep !== false);
+  DIM_TOGGLE_KEYS.forEach(k => {
+    const sw = dimStepSwitches[k];
+    const on = !runtime.dimToggles || runtime.dimToggles[k] !== false;
+    if (sw) sw.classList.toggle('on', on);
+  });
+  if (optionalFormsSwitch) optionalFormsSwitch.classList.toggle('on', !!runtime.includeOptionalForms);
+  OPTIONAL_FILTER_KEYS.forEach((k) => {
+    const sw = optionalFilterSwitches[k];
+    const on = !runtime.optionalFormFilters || runtime.optionalFormFilters[k] !== false;
+    if (sw) sw.classList.toggle('on', on);
+  });
+  const excludeKnownMorphsSwitch = document.getElementById('excludeKnownMorphsBtn');
+  if (excludeKnownMorphsSwitch) excludeKnownMorphsSwitch.classList.toggle('on', !!runtime.excludeKnownMorphs);
+  const excludeKnownMorphsToggle = document.getElementById('excludeKnownMorphsToggle');
+  if (excludeKnownMorphsToggle) excludeKnownMorphsToggle.setAttribute('aria-checked', runtime.excludeKnownMorphs ? 'true' : 'false');
+  const parsingShuffleAllSwitch = document.getElementById('parsingShuffleAllBtn');
+  if (parsingShuffleAllSwitch) parsingShuffleAllSwitch.classList.toggle('on', !!runtime.parsingShuffleAll);
+  const parsingShuffleAllToggle = document.getElementById('parsingShuffleAllToggle');
+  if (parsingShuffleAllToggle) parsingShuffleAllToggle.setAttribute('aria-checked', runtime.parsingShuffleAll ? 'true' : 'false');
+  const parsingCustomReviewSwitch = document.getElementById('parsingCustomReviewBtn');
+  if (parsingCustomReviewSwitch) parsingCustomReviewSwitch.classList.toggle('on', !!runtime.parsingCustomReview);
+  const parsingCustomReviewToggle = document.getElementById('parsingCustomReviewToggle');
+  if (parsingCustomReviewToggle) parsingCustomReviewToggle.setAttribute('aria-checked', runtime.parsingCustomReview ? 'true' : 'false');
+  const parsingReverseSwitch = document.getElementById('parsingReverseBtn');
+  if (parsingReverseSwitch) parsingReverseSwitch.classList.toggle('on', !!runtime.parsingReverse);
+  const parsingReverseToggle = document.getElementById('parsingReverseToggle');
+  if (parsingReverseToggle) parsingReverseToggle.setAttribute('aria-checked', runtime.parsingReverse ? 'true' : 'false');
+  const parsingLookupSwitch = document.getElementById('parsingLookupBtn');
+  if (parsingLookupSwitch) parsingLookupSwitch.classList.toggle('on', !!runtime.parsingLookup);
+  const parsingLookupToggle = document.getElementById('parsingLookupToggle');
+  if (parsingLookupToggle) parsingLookupToggle.setAttribute('aria-checked', runtime.parsingLookup ? 'true' : 'false');
+  const accentLookalikeSwitch = document.getElementById('accentLookalikeBtn');
+  if (accentLookalikeSwitch) accentLookalikeSwitch.classList.toggle('on', !!runtime.accentLookalikes);
+  const accentLookalikeToggle = document.getElementById('accentLookalikeToggle');
+  if (accentLookalikeToggle) accentLookalikeToggle.setAttribute('aria-checked', runtime.accentLookalikes ? 'true' : 'false');
+  // The toggles read as "Exclude X" — ON in the UI means the value is
+  // excluded (sub[value] === false in the model). Default is all values
+  // included → all toggles OFF in the UI.
+  Object.keys(DIM_VALUE_FILTER_VALUES).forEach((dim) => {
+    DIM_VALUE_FILTER_VALUES[dim].forEach((value) => {
+      const sw = document.getElementById(`dimValueFilter_${dim}_${value}_Btn`);
+      const sub = runtime.dimValueFilters && runtime.dimValueFilters[dim];
+      const underlying = dimFilterUnderlying(dim, value);
+      // For grouped UI keys (aspect's continuousUndefined → continuous +
+      // undefined) the toggle reads as ON when EVERY underlying value is
+      // excluded; a partial state shouldn't read as "fully excluded".
+      const on = !!sub && underlying.every((u) => sub[u] === false);
+      if (sw) sw.classList.toggle('on', on);
+      const t = document.getElementById(`dimValueFilter_${dim}_${value}_Toggle`);
+      if (t) t.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  });
+  syncParsingChapterUi();
+  syncParadigmFocusUi();
+  syncParsingCustomParadigmsUi();
+  if (dailyResetSwitch) dailyResetSwitch.classList.toggle('on', !!runtime.unspacedAutoResetEnabled);
+  if (shuffleToggle)   shuffleToggle.setAttribute('aria-checked',   runtime.shuffled ? 'true' : 'false');
+  if (requiredToggle)  requiredToggle.setAttribute('aria-checked',  runtime.requiredOnly ? 'true' : 'false');
+  if (requiredToggleSelector) requiredToggleSelector.setAttribute('aria-checked', runtime.requiredOnly ? 'true' : 'false');
+  if (directionToggle) directionToggle.setAttribute('aria-checked', runtime.directionToGreek ? 'true' : 'false');
+  if (spacedToggle)    spacedToggle.setAttribute('aria-checked',    runtime.spacedRepetition ? 'true' : 'false');
+  if (hardReviewToggle) hardReviewToggle.setAttribute('aria-checked', runtime.hardVocabReviewMode ? 'true' : 'false');
+  if (splitSelectionToggle) splitSelectionToggle.setAttribute('aria-checked', runtime.splitSelection ? 'true' : 'false');
+  if (selfCheckToggle) selfCheckToggle.setAttribute('aria-checked', (runtime.morphSelfCheck && isMorphologyMode()) ? 'true' : 'false');
+  if (aspectStepToggle) aspectStepToggle.setAttribute('aria-checked', runtime.aspectStep !== false ? 'true' : 'false');
+  DIM_TOGGLE_KEYS.forEach(k => {
+    const t = dimStepToggles[k];
+    const on = !runtime.dimToggles || runtime.dimToggles[k] !== false;
+    if (t) t.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  if (optionalFormsToggle) optionalFormsToggle.setAttribute('aria-checked', runtime.includeOptionalForms ? 'true' : 'false');
+  OPTIONAL_FILTER_KEYS.forEach((k) => {
+    const t = optionalFilterToggles[k];
+    const on = !runtime.optionalFormFilters || runtime.optionalFormFilters[k] !== false;
+    if (t) t.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  if (dailyResetToggle) dailyResetToggle.setAttribute('aria-checked', runtime.unspacedAutoResetEnabled ? 'true' : 'false');
+
+  if (directionToggle) {
+    const directionLabel = directionToggle.querySelector('.toggle-text');
+    if (directionLabel) {
+      directionLabel.textContent = isMorphologyMode()
+        ? 'English → Greek'
+        : 'Eng → Gk';
+    }
+  }
+  if (modeVocabBtn)    modeVocabBtn.classList.toggle('active', runtime.studyMode === 'vocab');
+  if (modeMorphBtn)    modeMorphBtn.classList.toggle('active', runtime.studyMode === 'morph');
+  if (modeReaderBtn)   modeReaderBtn.classList.toggle('active', runtime.studyMode === 'reader');
+  if (modeShortcutVocabBtn) modeShortcutVocabBtn.classList.toggle('active', runtime.studyMode === 'vocab');
+  if (modeShortcutMorphBtn) modeShortcutMorphBtn.classList.toggle('active', runtime.studyMode === 'morph');
+  const modeShortcutParsingBtn = document.getElementById('modeShortcutParsingBtn');
+  if (modeShortcutParsingBtn) modeShortcutParsingBtn.classList.toggle('active', runtime.studyMode === 'parsing');
+  if (modeShortcutReaderBtn) modeShortcutReaderBtn.classList.toggle('active', runtime.studyMode === 'reader');
+  syncThemeButtons();
+  if (resetDeckBtn) {
+    resetDeckBtn.textContent = runtime.spacedRepetition ? 'Reset spaced' : 'Reset unspaced';
+    resetDeckBtn.title = runtime.spacedRepetition
+      ? 'Choose to set every card due now or fully reset SRS progress for this deck'
+      : 'Reset unspaced marks for this deck only';
+  }
+  // Reset deck/required don't apply in parsing mode (no SRS, no
+  // required/supplemental split — parsing's record is the per-form recent
+  // attempts). Swap both for a single "Reset known" that drops every
+  // form's per-form tally back to 0/2 (per-paradigm history kept).
+  const resetRequiredBtn = document.getElementById('resetRequiredBtn');
+  const resetKnownBtn = document.getElementById('resetKnownBtn');
+  const clearParsingStatsBtn = document.getElementById('clearParsingStatsBtn');
+  const parsing = isParsingMode();
+  if (resetDeckBtn) resetDeckBtn.style.display = parsing ? 'none' : '';
+  if (resetRequiredBtn) resetRequiredBtn.style.display = parsing ? 'none' : '';
+  if (resetKnownBtn) resetKnownBtn.style.display = parsing ? '' : 'none';
+  // "Clear parsing stats" is parsing-mode-only — it wipes runtime.paradigmStepStats
+  // and nothing else, so it's meaningless (and hidden) in vocab/morph/reader.
+  if (clearParsingStatsBtn) clearParsingStatsBtn.style.display = parsing ? '' : 'none';
+
+  const subtitle = document.getElementById('appSubtitle');
+  if (subtitle) subtitle.textContent = getModeDescription();
+
+  syncLayoutVisibility();
+}
+
+function syncLayoutVisibility() {
+  const controlsBar = document.getElementById('controlsBar');
+  const navRow = document.getElementById('navRow');
+  const markRow = document.getElementById('markRow');
+  const ffRow = document.getElementById('ffRow');
+  const prevBtn = navRow ? navRow.querySelector('.nav-prev') : null;
+  const nextBtn = navRow ? navRow.querySelector('.nav-next') : null;
+  const undoBtn = document.getElementById('spacedUndoBtn');
+  const navResetBtn = document.getElementById('navResetBtn');
+  const directionToggle = document.getElementById('directionToggle');
+  const requiredToggle = document.getElementById('requiredToggle');
+  const hardReviewToggle = document.getElementById('hardReviewToggle');
+  const splitSelectionToggle = document.getElementById('splitSelectionToggle');
+  const selfCheckToggle = document.getElementById('selfCheckToggle');
+  const shuffleToggle = document.getElementById('shuffleToggle');
+  const spacedToggle = document.getElementById('spacedToggle');
+  const dailyResetToggle = document.getElementById('unspacedDailyResetToggle');
+  const modeGroup = document.querySelector('.mode-group[aria-label="Study mode"]');
+  const cardArea = document.getElementById('cardArea');
+  const reviewShell = document.querySelector('.review-shell');
+  const cardMode = isCardStudyMode();
+  const reviewDeckMode = isReviewDeckMode();
+
+  // In reader mode every toggle in the controls bar is hidden, leaving an
+  // empty bordered frame — hide the whole bar there so it doesn't show blank.
+  if (controlsBar) controlsBar.style.display = isReaderMode() ? 'none' : 'flex';
+  // Reader mode keeps no deck and saves no progress, so the Reshuffle / Reset
+  // actions have nothing to act on — hide the whole grid there.
+  // Lookup mode is a reference, not a deck: the nav row (Prev/Next/Reset) and
+  // the reset-actions grid act on cards/stats it doesn't use, so both are
+  // hidden. (Computed inline here — the shared `lookupActive` is declared
+  // further down with the parsing-toggle visibility.)
+  const lookupReference = isParsingMode() && runtime.parsingLookup;
+  // The reset actions live in their own collapsable now — hide the whole
+  // <details> (summary included), not just the inner grid.
+  const resetActionsSection = document.getElementById('resetActionsDetails')
+    || document.querySelector('.reset-actions-grid');
+  if (resetActionsSection) resetActionsSection.style.display = (isReaderMode() || lookupReference) ? 'none' : '';
+  if (cardArea) cardArea.style.display = cardMode ? '' : 'none';
+  if (reviewShell) reviewShell.style.display = (reviewDeckMode && !lookupReference) ? '' : 'none';
+  if (navRow) navRow.style.display = reviewDeckMode && runtime.selectedKeys.length && !lookupReference ? 'flex' : 'none';
+  if (markRow) markRow.style.display = reviewDeckMode && runtime.selectedKeys.length && !isMorphologyMode() && !isParsingMode() ? 'flex' : 'none';
+  if (ffRow) ffRow.style.display = reviewDeckMode && runtime.selectedKeys.length && runtime.spacedRepetition && !isParsingMode() ? 'flex' : 'none';
+  if (directionToggle) directionToggle.style.display = (runtime.studyMode === 'vocab' || runtime.studyMode === 'morph') ? 'flex' : 'none';
+  if (requiredToggle) requiredToggle.style.display = runtime.studyMode === 'vocab' ? 'flex' : 'none';
+  // Spacing cadence only affects the spaced scheduler, so show it only when
+  // spaced review is on for the current (vocab/grammar) mode.
+  const cadenceToggle = document.getElementById('cadenceToggle');
+  if (cadenceToggle) cadenceToggle.style.display = (runtime.spacedRepetition && (runtime.studyMode === 'vocab' || runtime.studyMode === 'morph')) ? 'flex' : 'none';
+  if (hardReviewToggle) hardReviewToggle.style.display = runtime.studyMode === 'vocab' ? 'flex' : 'none';
+  // Stem & declension notes annotate standard vocab cards only.
+  const stemNotesToggleVis = document.getElementById('stemNotesToggle');
+  if (stemNotesToggleVis) stemNotesToggleVis.style.display = runtime.studyMode === 'vocab' ? 'flex' : 'none';
+  // Irregular "… as cards" toggles expand the vocab deck only; they live in a
+  // collapsible "Variant forms" section, so show/hide that whole container.
+  const variantFormsDetails = document.getElementById('variantFormsDetails');
+  if (variantFormsDetails) variantFormsDetails.style.display = runtime.studyMode === 'vocab' ? '' : 'none';
+  // Split vocab/grammar selection only makes sense between vocab and morph;
+  // parsing mode owns its chapter via the dedicated dropdown, and reader mode
+  // doesn't use the deck selection at all, so hide the toggle in both.
+  if (splitSelectionToggle) splitSelectionToggle.style.display = (canAccessGrammarUi() && !isParsingMode() && !isReaderMode()) ? 'flex' : 'none';
+  if (selfCheckToggle) selfCheckToggle.style.display = (isMorphologyMode() && canAccessGrammarUi()) ? 'flex' : 'none';
+  // Parsing options apply only to parsing mode — keep them out of the
+  // vocab / grammar / reader Advanced-settings panels where they have no
+  // effect and would just clutter the UI.
+  // Lookup mode takes over the whole parsing surface (it's a reference, not a
+  // deck), so the drill-only controls — every per-dim/step option, the deck-
+  // pool toggles (exclude-known / shuffle-all / custom set / reverse), and the
+  // plain Shuffle — are hidden while it's on. The focused-paradigm dropdown and
+  // the chapter dropdown stay, since lookup is driven by exactly those.
+  const lookupActive = isParsingMode() && runtime.parsingLookup;
+  const parsingOptionsDetails = document.getElementById('parsingOptionsDetails');
+  if (parsingOptionsDetails) parsingOptionsDetails.style.display = (isParsingMode() && !lookupActive) ? '' : 'none';
+  const parsingChapterRow = document.getElementById('parsingChapterRow');
+  if (parsingChapterRow) parsingChapterRow.style.display = isParsingMode() ? 'flex' : 'none';
+  const paradigmFocusRowPrimary = document.getElementById('paradigmFocusRowPrimary');
+  // Shuffle-all keeps the dropdown visible — its head "All paradigms through
+  // selected chapter" entry is the toggle's face (selecting a real paradigm
+  // drops back out). Only the custom paradigm set hides it, swapping in the
+  // checkbox selector. Lookup always uses a single focused paradigm, so its
+  // dropdown stays too.
+  if (paradigmFocusRowPrimary) paradigmFocusRowPrimary.style.display = (isParsingMode() && (lookupActive || !runtime.parsingCustomReview)) ? 'flex' : 'none';
+  // Custom paradigm set: the checkbox selector takes the dropdown's place
+  // while the toggle is on.
+  const parsingCustomParadigmsRow = document.getElementById('parsingCustomParadigmsRow');
+  if (parsingCustomParadigmsRow) parsingCustomParadigmsRow.style.display = (isParsingMode() && runtime.parsingCustomReview && !lookupActive) ? 'flex' : 'none';
+  if (shuffleToggle) shuffleToggle.style.display = (reviewDeckMode && !lookupActive) ? 'flex' : 'none';
+  // Exclude-known-morphs is a parsing-only filter on the deck pool —
+  // promoted from inside Parsing options to a top-level toggle next to
+  // Shuffle so it's reachable without expanding the per-dim section.
+  const excludeKnownMorphsToggle = document.getElementById('excludeKnownMorphsToggle');
+  if (excludeKnownMorphsToggle) excludeKnownMorphsToggle.style.display = (isParsingMode() && !lookupActive) ? 'flex' : 'none';
+  // Shuffle-all-paradigms: parsing-only, sits next to Exclude known morphs.
+  const parsingShuffleAllToggle = document.getElementById('parsingShuffleAllToggle');
+  if (parsingShuffleAllToggle) parsingShuffleAllToggle.style.display = (isParsingMode() && !lookupActive) ? 'flex' : 'none';
+  // Custom paradigm set: parsing-only, sits next to Shuffle all paradigms.
+  const parsingCustomReviewToggle = document.getElementById('parsingCustomReviewToggle');
+  if (parsingCustomReviewToggle) parsingCustomReviewToggle.style.display = (isParsingMode() && !lookupActive) ? 'flex' : 'none';
+  const parsingReverseToggle = document.getElementById('parsingReverseToggle');
+  if (parsingReverseToggle) parsingReverseToggle.style.display = (isParsingMode() && !lookupActive) ? 'flex' : 'none';
+  // Lookup mode toggle: parsing-only. Promoted up under Text size (its own
+  // #parsingLookupRow in the display-prefs block), so show/hide the row.
+  const parsingLookupRow = document.getElementById('parsingLookupRow');
+  if (parsingLookupRow) parsingLookupRow.style.display = isParsingMode() ? 'flex' : 'none';
+  // Accent/breathing look-alike distractors only do anything in the reverse
+  // drill, so the toggle only shows once English → Greek is on.
+  const accentLookalikeToggle = document.getElementById('accentLookalikeToggle');
+  if (accentLookalikeToggle) accentLookalikeToggle.style.display = (isParsingMode() && runtime.parsingReverse && !lookupActive) ? 'flex' : 'none';
+  // Spaced repetition writes confidence stats — parsing mode is explicitly
+  // off-the-record, so the toggle is irrelevant there and gets hidden.
+  if (spacedToggle) spacedToggle.style.display = (reviewDeckMode && !isParsingMode()) ? 'flex' : 'none';
+  if (dailyResetToggle) dailyResetToggle.style.display = (reviewDeckMode && !runtime.spacedRepetition && runtime.studyMode === 'vocab') ? 'flex' : 'none';
+  if (modeGroup) modeGroup.style.display = canAccessGrammarUi() ? 'inline-flex' : 'none';
+  if (!reviewDeckMode) return;
+  const unspacedVocab = !runtime.spacedRepetition && !isMorphologyMode();
+  const unspacedHistoryTop = unspacedVocab ? getUnspacedHistoryTopType() : null;
+  const unspacedHasHistory = !!unspacedHistoryTop;
+  if (prevBtn) {
+    // Spaced/morph keep their dedicated Undo button (Prev stays hidden).
+    // Parsing mode is off-the-record and only supports Skip card → Next,
+    // so Prev is hidden there too. In unspaced vocab Prev is always
+    // present — a constant anchor in the nav row — and walks the history
+    // stack. Label flips to "↶ Undo" when the next pop will roll back a
+    // confidence-impacting mark so the user sees the warning at exactly
+    // that step. The button is functionally disabled (CSS keeps the
+    // Reset-like swatch instead of greying out) when there's nothing to
+    // undo or step back.
+    const atStart = !runtime.deck.length || runtime.currentIdx <= 0;
+    const hidePrev = isMorphologyMode() || isParsingMode() || (runtime.spacedRepetition && !isMorphologyMode());
+    prevBtn.style.display = hidePrev ? 'none' : '';
+    const prevDisabled = unspacedVocab ? (!unspacedHasHistory && atStart) : atStart;
+    prevBtn.disabled = prevDisabled;
+    prevBtn.classList.toggle('nav-disabled', prevDisabled);
+    if (unspacedVocab) {
+      prevBtn.textContent = unspacedHistoryTop === 'mark' ? '↶ Undo' : '← Prev';
+    } else {
+      prevBtn.textContent = '← Prev';
+    }
+  }
+  if (undoBtn) {
+    const morphUndoActive = isMorphologyMode() && runtime.morphAnswerState.answered && !!runtime.spacedUndoSnapshot;
+    const vocabUndoActive = runtime.spacedRepetition && !isMorphologyMode() && !!runtime.spacedUndoSnapshot;
+    // Unspaced now routes undo through the Prev button, so the separate
+    // Undo control only shows for spaced/morph.
+    undoBtn.style.display = (morphUndoActive || vocabUndoActive) ? '' : 'none';
+  }
+  if (navResetBtn) {
+    // Unspaced vocab keeps the inline Reset visible at all times so the
+    // user has a one-tap escape from the all-archived "Session Confirmed"
+    // state without Next having to morph. Parsing mode has nothing to
+    // reset (no SRS, no archive — each card is one walk), so the button
+    // is hidden there even when unspaced.
+    navResetBtn.style.display = unspacedVocab && !isParsingMode() && runtime.selectedKeys.length > 0 ? '' : 'none';
+  }
+  if (nextBtn) {
+    if (isParsingMode()) {
+      // Parsing has no SRS/confidence writes. Mid-walk, Next doubles as the
+      // "skip this card without recording stats" action (the standalone
+      // skip-card button was removed since pressing it had the same effect
+      // as advancing here). After the walk completes, stats are already
+      // written so the label reverts to plain Next.
+      const stepState = runtime.morphStepState;
+      const midWalk = !!(stepState && Array.isArray(stepState.steps) && stepState.steps.length > 0 && !stepState.completed);
+      nextBtn.textContent = midWalk ? 'Skip card →' : 'Next →';
+      nextBtn.classList.remove('spaced-again', 'nav-next-as-reset');
+    } else if (isMorphologyMode()) {
+      // Grammar has no SRS/confidence writes, so the "Again →" semantic
+      // doesn't apply — Next is just "advance to the next card".
+      nextBtn.textContent = 'Next →';
+      nextBtn.classList.remove('spaced-again', 'nav-next-as-reset');
+    } else if (runtime.spacedRepetition) {
+      nextBtn.textContent = 'Again →';
+      nextBtn.classList.toggle('spaced-again', true);
+      nextBtn.classList.remove('nav-next-as-reset');
+    } else {
+      nextBtn.textContent = 'Next →';
+      nextBtn.classList.remove('spaced-again', 'nav-next-as-reset');
+    }
+  }
+
+}
+
+function ensureUsageStats(stats = runtime.appUsageStats) {
+  const safe = sanitizeUsageStats(stats, MAX_STUDY_SESSION_HISTORY);
+  if (stats !== safe) runtime.appUsageStats = safe;
+  return safe;
+}
+
+function accumulateUsageTime(now = Date.now()) {
+  const usage = ensureUsageStats();
+  return accumulateUsageTimeForStats(usage, now);
+}
+
+function accumulateActiveStudyTime(now = Date.now()) {
+  const usage = ensureUsageStats();
+  return accumulateActiveStudyTimeForStats(usage, STUDY_IDLE_MS, now);
+}
+
+function finalizeStudySession(now = Date.now()) {
+  const usage = ensureUsageStats();
+  finalizeStudySessionForStats(usage, STUDY_IDLE_MS, MAX_STUDY_SESSION_HISTORY, now);
+}
+
+function noteStudyInteraction(now = Date.now()) {
+  const usage = ensureUsageStats();
+  noteStudyInteractionForStats(usage, {
+    now,
+    documentHidden: document.hidden,
+    hasSelectedCards: runtime.selectedKeys.length > 0,
+    studyIdleMs: STUDY_IDLE_MS,
+    studySessionBreakMs: STUDY_SESSION_BREAK_MS,
+    maxStudySessionHistory: MAX_STUDY_SESSION_HISTORY
+  });
+  // Session-boundary clock for the three-deck flow. Snapshot the previous
+  // value into previousStudyActivityAt BEFORE updating lastStudyActivityAt,
+  // so buildStudyDeck (called later in the same flip handler) sees the
+  // timestamp of the PREVIOUS activity, not the one we just recorded. Any
+  // study event (vocab mark, grammar mark, reader interaction) updates
+  // both; persistence saves lastStudyActivityAt to gate session-state
+  // restore across reloads.
+  if (!document.hidden) {
+    runtime.previousStudyActivityAt = runtime.lastStudyActivityAt || 0;
+    runtime.lastStudyActivityAt = now;
+  }
+}
+
+function getTodayUsageMs() {
+  const usage = ensureUsageStats();
+  return getUsageMsForDay(usage, getUsageDayKey());
+}
+
+function getTodayActiveStudyMs() {
+  const usage = ensureUsageStats();
+  return getActiveStudyMsForDay(usage, getUsageDayKey());
+}
+
+function updateUsageMeta() {
+  const el = document.getElementById('progressMeta');
+  if (!el) return;
+  const usage = ensureUsageStats();
+  el.textContent = `Today ${formatUsageDuration(getTodayActiveStudyMs())} · Study ${formatUsageDuration(usage.activeStudyMs)} · Total ${formatUsageDuration(usage.totalMs)}`;
+}
+
+function startUsageTracking() {
+  ensureUsageStats();
+  if (!document.hidden && !runtime.appUsageStats.lastActiveAt) {
+    runtime.appUsageStats.lastActiveAt = Date.now();
+  }
+
+  if (!runtime.usageVisibilityBound) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        const now = Date.now();
+        accumulateUsageTime(now);
+        finalizeStudySession(now);
+        runtime.appUsageStats.lastActiveAt = 0;
+        updateUsageMeta();
+        saveState();
+      } else {
+        runtime.appUsageStats.lastActiveAt = Date.now();
+        updateUsageMeta();
+        maybeAutoResetUnspacedArchivesAndRefresh();
+      }
+    });
+
+    window.addEventListener('pagehide', () => {
+      const now = Date.now();
+      accumulateUsageTime(now);
+      finalizeStudySession(now);
+      runtime.appUsageStats.lastActiveAt = 0;
+      saveState();
+    });
+
+    runtime.usageVisibilityBound = true;
+  }
+
+  if (!runtime.usageTickHandle) {
+    runtime.usageTickHandle = window.setInterval(() => {
+      if (document.hidden) return;
+      const now = Date.now();
+      const delta = accumulateUsageTime(now);
+      const activeDelta = accumulateActiveStudyTime(now);
+      if (delta > 0 || activeDelta > 0) {
+        updateUsageMeta();
+        if (isAnalyticsModalOpen()) renderAnalyticsOverlay();
+        runtime.usageTickCounter += 1;
+        if (runtime.usageTickCounter >= 4) {
+          runtime.usageTickCounter = 0;
+          saveState();
+        }
+      }
+    }, 15000);
+  }
+}
+
+
+// ── Unspaced cycle state helpers (state-coupled) ──
+
+function resetUnspacedCycleState() {
+  runtime.unspacedCycleState = {};
+  runtime.unspacedDeferredIds = new Set();
+  runtime.flipsSinceReshuffle = 0;
+  runtime.lastPeriodicReshuffleAt = 0;
+}
+
+// Stamp the current archive day so subsequent auto-reset checks know the
+// "current batch" started today. Called whenever an archive (Easy mark in
+// unspaced vocab) is created.
+function noteUnspacedArchiveActivity() {
+  runtime.lastUnspacedArchiveDayKey = getUnspacedArchiveDayKey();
+}
+
+// Clears all unspaced 'known' marks across g2e and e2g when the local
+// archive-day key has rolled past the 5 AM cutoff since the last archive
+// activity. Morph marks are untouched. Returns true if anything was
+// cleared so callers can rebuild the active deck.
+function maybeAutoResetUnspacedArchives() {
+  if (!runtime.unspacedAutoResetEnabled) return false;
+  const todayKey = getUnspacedArchiveDayKey();
+  const lastKey = runtime.lastUnspacedArchiveDayKey || '';
+  if (!lastKey) {
+    runtime.lastUnspacedArchiveDayKey = todayKey;
+    return false;
+  }
+  if (lastKey === todayKey) return false;
+
+  ensureDirectionalStores();
+  let didClear = false;
+  ['g2e', 'e2g'].forEach(dirKey => {
+    const bucket = runtime.globalWordMarks[dirKey];
+    if (!bucket) return;
+    Object.keys(bucket).forEach(cardId => {
+      if (bucket[cardId] === 'known') {
+        delete bucket[cardId];
+        didClear = true;
+      }
+    });
+  });
+  runtime.lastUnspacedArchiveDayKey = todayKey;
+  runtime.marks = getDirectionalMarksStore();
+  return didClear;
+}
+
+// Wrapper that runs the auto-reset and, if it actually cleared archives,
+// rebuilds the active vocab unspaced deck + repaints so the freshly
+// restored cards show up immediately.
+function maybeAutoResetUnspacedArchivesAndRefresh() {
+  const didClear = maybeAutoResetUnspacedArchives();
+  if (!didClear) return;
+  if (!runtime.selectedKeys.length) return;
+  if (runtime.spacedRepetition || isMorphologyMode()) return;
+  runtime.deck = buildStudyDeck(runtime.originalDeck);
+  runtime.currentIdx = 0;
+  runtime.isFlipped = false;
+  resetMorphAnswerState();
+  renderCard();
+  renderProgress();
+  renderReview();
+  saveState();
+}
+
+function getUnspacedCycleEntry(cardId) {
+  if (!runtime.unspacedCycleState[cardId] || typeof runtime.unspacedCycleState[cardId] !== 'object') {
+    runtime.unspacedCycleState[cardId] = { wrongThisCycle: false, correctCount: 0, lastOutcome: null };
+  }
+  return runtime.unspacedCycleState[cardId];
+}
+
+function applyUnspacedSharedSchedule(card, outcome, _reviewedAt = Date.now()) {
+  // Unspaced reviews update only the unspaced cycle bookkeeping. The spaced
+  // SRS schedule (progress.dueAt / intervalDays) is intentionally NOT touched
+  // here, so flipping into spaced-repetition mode later finds untouched
+  // schedules that reflect only previous spaced reviews.
+  const cycleEntry = getUnspacedCycleEntry(card.id);
+  const normalizedOutcome = outcome === 'easy' ? 'easy' : outcome === 'pass' ? 'pass' : 'again';
+
+  if (normalizedOutcome === 'again') {
+    cycleEntry.wrongThisCycle = true;
+    cycleEntry.lastOutcome = 'again';
+    return;
+  }
+
+  cycleEntry.correctCount += 1;
+  cycleEntry.lastOutcome = normalizedOutcome;
+}
+
+// ── Card selection wrapper (state-coupled) ──
+
+function getSelectedCards(keys) {
+  if (isMorphologyMode()) {
+    const cards = getSelectedGrammarCards(keys);
+    if (isReverseGrammarActive()) {
+      return cards.filter(card => card && card.reversible === true);
+    }
+    return cards;
+  }
+  // Parsing mode loads the focused paradigm's cards regardless of which
+  // call path got us here (selectors.loadDeckFromKeys vs. restoreState).
+  // selectors.js layers an extra override on top, but restoreState rebuilds
+  // its own deck without that hook — so without this branch a fresh app
+  // load in parsing mode would surface vocab cards until the user picks a
+  // paradigm.
+  if (isParsingMode()) {
+    return buildFilteredFocusedParadigmCards();
+  }
+  const vocabCards = getSelectedVocabCards(keys, false);
+  // Irregular "… as cards" toggles (advanced settings, vocab-only): each
+  // enabled concept's non-present principal part joins the deck as its own
+  // card. A toggle defaults on when its concept's chapter is selected, unless
+  // the user has overridden it manually.
+  const tags = runtime.studyMode === 'vocab'
+    ? irregularEnabledTags(runtime.selectedKeys, runtime.irregularCards)
+    : [];
+  return tags.length ? expandIrregularCards(vocabCards, tags) : vocabCards;
+}
+
+// When the "Exclude known morphs" toggle is on, drop any card that already
+// passes the strict 2/2 "known" threshold under the user's current dim
+// toggles. When every form in the focused paradigm is known the deck goes
+// empty on purpose — renderCard then shows the "paradigm mastered" empty
+// state (see js/ui/render.js) instead of silently re-admitting the known
+// forms, which is what made the toggle look broken: a fully-mastered
+// paradigm kept surfacing its blue 2/2 cards.
+function applyExcludeKnownMorphsFilter(cards) {
+  if (!Array.isArray(cards) || !cards.length) return cards || [];
+  if (!runtime.excludeKnownMorphs) return cards;
+  const stats = runtime.paradigmStepStats || {};
+  const enabledDims = getEnabledParsingDims();
+  return cards.filter((c) => !isLemmaFormKnown(stats, c.lemma, c.id, enabledDims));
+}
+
+// The lemmas the user has ticked for the custom paradigm set — the truthy
+// keys of runtime.parsingCustomParadigms. Order is irrelevant here; the pool
+// builder re-orders by course progression. Out-of-scope lemmas can be in the
+// map (a saved tick from a higher chapter); the builder drops them.
+function getSelectedCustomParadigmLemmas() {
+  const map = runtime.parsingCustomParadigms;
+  if (!map || typeof map !== 'object') return [];
+  return Object.keys(map).filter((lemma) => map[lemma]);
+}
+
+// The focused paradigm's in-scope, chapter-gated pool with the
+// exclude-known-morphs filter applied — the single source of truth for what
+// parsing mode should be drilling right now. Used at deck-build time
+// (getFocusedParadigmCards / getSelectedCards) and at every parsing cycle
+// boundary (rebuildParsingCycle), so a form that crossed the 2/2 "known"
+// threshold mid-session drops out the moment the deck is next rebuilt.
+function buildFilteredFocusedParadigmCards() {
+  const keys = getAggregateSelectionKeys();
+  const opts = {
+    includeOptional: !!runtime.includeOptionalForms,
+    optionalFilters: runtime.optionalFormFilters,
+    dimValueFilters: runtime.dimValueFilters
+  };
+  // "Custom paradigm set" wins over everything else: pool only the
+  // paradigms the user has ticked, shuffled together. (Mutually exclusive
+  // with shuffle-all — the handlers keep only one on at a time — but checked
+  // first regardless so it takes precedence if both somehow end up set.)
+  if (runtime.parsingCustomReview) {
+    return applyExcludeKnownMorphsFilter(
+      getCardsForParadigmLemmas(keys, getSelectedCustomParadigmLemmas(), opts)
+    );
+  }
+  // Global "shuffle all paradigms" toggle wins over the focused paradigm:
+  // pool every in-scope paradigm up to the chapter gate, shuffled together.
+  if (runtime.parsingShuffleAll) {
+    return applyExcludeKnownMorphsFilter(getAllParsingCards(keys, opts));
+  }
+  ensureMorphFocusedParadigm();
+  const sel = runtime.morphFocusedParadigm;
+  if (!sel) return [];
+  // "Shuffle all of type" dropdown selection: pool every in-scope lemma in
+  // the chosen category instead of a single paradigm.
+  const category = parseCategoryShuffleValue(sel);
+  if (category) {
+    return applyExcludeKnownMorphsFilter(getCardsForParadigmCategory(keys, category, opts));
+  }
+  return applyExcludeKnownMorphsFilter(getCardsForFocusedParadigm(keys, sel, opts));
+}
+
+// Status-weighted ordering for the parsing deck. A plain shuffle treats a
+// form the student has never seen exactly like one they've already nailed
+// twice, so (especially with "Exclude known morphs" off) a review run can
+// open with a stack of mastered 2/2 forms while the unseen ones wait at the
+// back — random, but not purposeful. Two things shape the order instead:
+//
+// 1. Session show-count (the hard rule). Every time a form is displayed this
+//    run we bump runtime.parsingShowCounts (see noteParsingCardShown). The
+//    deck is bucketed by that count, fewest-shown first, so a form can't be
+//    shown a third time until every less-shown form — the never-seen ones
+//    included — has had its turn. In practice: while any unseen form remains,
+//    nothing gets shown more than twice. The buckets only diverge when a
+//    mid-cycle rebuild (reshuffle / option change) re-deals a partially-walked
+//    deck; a normal full pass keeps every count equal.
+//
+// 2. Status weight (the soft bias, applied *within* a show-count bucket). Each
+//    form's per-form recent status (the same 0/2 → 2/2 tally the dots and the
+//    exclude-known filter read via getLemmaFormStatus) sets a base priority:
+//      unseen    — never attempted          → highest priority (fixed)
+//      wrong     — 0/n recent               → high, GRADED (see below)
+//      uncertain — 1/2 recent               → mid, GRADED
+//      partial   — only ever named one value → low (fixed, = right): treated as
+//                  of a multi-value form        correct so it isn't hammered,
+//                                               but never excluded as known, so
+//                                               it keeps coming back until the
+//                                               full form is named.
+//      right     — 1/1 recent               → low (fixed)
+//      known     — 2/2 recent (mastered)    → lowest (fixed, flat)
+//    For the wrong/uncertain tier — the only "unknown" forms with recorded
+//    misses — the weight isn't flat: it scales with weightedRecentMissScore,
+//    the comprehension-weighted magnitude of the form's recent wrong steps. So
+//    a form that keeps blowing high-impact dimensions (mood, tense, case) is
+//    surfaced ahead of one that only fumbles a low-impact one (gender), and a
+//    verb (more, weightier steps) outranks a noun at similar shakiness. Unseen
+//    stays on top; right/known stay fixed at the bottom (the grading is for
+//    unknowns only — a mastered form is just deprioritized, not re-ranked).
+//    It's a soft bias, not a hard sort: Efraimidis–Spirakis weighted random
+//    ordering (key = random^(1/weight), sort descending) gives, for any two
+//    forms in the same bucket, P(a before b) = weight_a / (weight_a +
+//    weight_b). Nothing is pinned — every form can still surface anywhere, so
+//    the deck feels shuffled while leaning toward what needs work.
+//
+// The show-count rule (1) stays the PRIMARY sort, so the soft weighting never
+// breaks the "shown at most twice before every form has had a turn" cap: a
+// mastered form is deprioritized within its show-count bucket but still rejoins
+// the weighted-random order once all forms have been seen at least once.
+//
+// When the shuffle toggle is off the deck keeps strict paradigm order (neither
+// rule applies) so the user can still walk a paradigm top-to-bottom.
+const PARSING_UNSEEN_WEIGHT = 6;   // never attempted → highest
+const PARSING_RIGHT_WEIGHT = 1.5;  // 1/1 clean → low (confirm once more)
+const PARSING_PARTIAL_WEIGHT = 1.5; // named one value of a multi-value form →
+                                    // treat as correct (low), but it's never
+                                    // excluded as 2/2-known, so it still
+                                    // resurfaces until the full form is named.
+const PARSING_KNOWN_WEIGHT = 1;    // 2/2 clean → lowest, flat (not re-ranked)
+// Wrong/uncertain forms: a base that lifts any form with recent misses above a
+// clean 1/1, plus the comprehension-weighted recent miss magnitude, capped just
+// under PARSING_UNSEEN_WEIGHT so an unseen form still leads the most-missed one.
+const PARSING_WRONG_BASE = 2.5;
+const PARSING_WRONG_SCALE = 0.7;
+const PARSING_WRONG_MAX = 5.5;
+function parsingFormPriorityWeight(card, stats, enabledDims) {
+  if (!card) return PARSING_RIGHT_WEIGHT;
+  const status = getLemmaFormStatus(stats, card.lemma, card.id, enabledDims);
+  if (status === 'unseen') return PARSING_UNSEEN_WEIGHT;
+  if (status === 'known') return PARSING_KNOWN_WEIGHT;
+  if (status === 'right') return PARSING_RIGHT_WEIGHT;
+  if (status === 'partial') return PARSING_PARTIAL_WEIGHT;
+  // wrong | uncertain — grade by how badly / how importantly it's been missed.
+  const miss = weightedRecentMissScore(stats, card.lemma, card.id, enabledDims);
+  return Math.min(PARSING_WRONG_BASE + PARSING_WRONG_SCALE * miss, PARSING_WRONG_MAX);
+}
+function orderParsingPool(pool) {
+  const list = Array.isArray(pool) ? [...pool] : [];
+  if (!runtime.shuffled || list.length < 2) return list;
+  const stats = runtime.paradigmStepStats || {};
+  const enabledDims = getEnabledParsingDims();
+  const counts = runtime.parsingShowCounts || {};
+  return list
+    .map((card) => {
+      const shows = card && card.id ? (counts[card.id] || 0) : 0;
+      const weight = parsingFormPriorityWeight(card, stats, enabledDims);
+      // Math.random() can return 0; clamp away from it so the pow stays finite
+      // (a 0 key would otherwise pin that card to the back of its bucket).
+      const r = Math.random() || Number.MIN_VALUE;
+      return { card, shows, key: Math.pow(r, 1 / weight) };
+    })
+    // Primary: fewest session-shows first (the "max two until unseen expended"
+    // rule). Secondary: the status-weighted random key, so within an equal
+    // show-count the unseen > wrong > … > known priority still applies and the
+    // order still feels shuffled.
+    .sort((a, b) => (a.shows - b.shows) || (b.key - a.key))
+    .map((entry) => entry.card);
+}
+
+// Record that a parsing card is now on screen. Called from the render layer
+// each time it paints a parsing card; the parsingLastShownCardId guard means
+// the many re-renders of one card during its dimensional walk count as a
+// single show, while genuinely moving to (or cycling back to) another card
+// bumps its tally. Feeds orderParsingPool's fewest-shown-first ordering.
+function noteParsingCardShown(cardId) {
+  if (!cardId || runtime.parsingLastShownCardId === cardId) return;
+  runtime.parsingLastShownCardId = cardId;
+  if (!runtime.parsingShowCounts || typeof runtime.parsingShowCounts !== 'object') {
+    runtime.parsingShowCounts = {};
+  }
+  runtime.parsingShowCounts[cardId] = (runtime.parsingShowCounts[cardId] || 0) + 1;
+}
+
+// Wipe the per-session parsing display tally — called when the parsing pool is
+// rebuilt for a genuinely new scope (paradigm / chapter / pool-toggle change,
+// all routed through loadDeckFromKeys) so the "shown at most twice" budget
+// starts fresh. A plain reshuffle deliberately does NOT reset it: the budget
+// should keep bounding repeats across reshuffles within the same run.
+function resetParsingShowCounts() {
+  runtime.parsingShowCounts = {};
+  runtime.parsingLastShownCardId = null;
+}
+
+// Rebuild the parsing deck for a fresh cycle. Unlike startNextCycle's generic
+// 'remaining' path — which reshuffles the existing originalDeck and never
+// re-runs the exclude-known filter — this re-derives the filtered focused
+// pool so newly-mastered (2/2) forms are dropped. Honors the shuffle toggle
+// (via orderParsingPool's status weighting) and avoidHeadId so the just-shown
+// card doesn't lead the new cycle. When the pool is empty (every form
+// mastered), the deck drains and renderCard shows the "paradigm mastered"
+// empty state.
+function rebuildParsingCycle(options = {}) {
+  const pool = buildFilteredFocusedParadigmCards();
+  runtime.originalDeck = pool;
+  const ordered = orderParsingPool(pool);
+  avoidHeadCollision(ordered, options.avoidHeadId);
+  runtime.deck = ordered;
+  runtime.activeDeckCount = ordered.length;
+  runtime.currentIdx = ordered.length ? 0 : runtime.deck.length;
+  runtime.unspacedPendingRecycle = false;
+  resetUnspacedCycleState();
+  // Drop the cached step-walk for the card we just left. A reshuffled cycle
+  // can land the same card back at the head — most often when the focused
+  // paradigm is down to a single in-scope form (e.g. one form left after
+  // exclude-known-morphs), since avoidHeadCollision can't displace a head in a
+  // <2-card deck. Without this, ensureStepStateForCard reuses the *completed*
+  // morphStepState (same cardId) and re-renders the "PARSE COMPLETE" summary,
+  // so Next looks dead. Clearing it forces a fresh walk for whatever card now
+  // leads the cycle.
+  resetMorphStepState();
+}
+
+
+function isSupplementalCard(card) {
+  const key = String((card && card.sourceKey) || '');
+  const set = key && window.SETS && typeof window.SETS === 'object' ? window.SETS[key] : null;
+  return !!(
+    card && (
+      card.supplemental ||
+      (set && (set.supplemental || set.type === 'supplemental')) ||
+      /^W\d+O$/.test(key) ||
+      /^W\d+_/.test(key)
+    )
+  );
+}
+
+function isAdvancedCard(card) {
+  const key = String((card && card.sourceKey) || '');
+  const set = key && window.SETS && typeof window.SETS === 'object' ? window.SETS[key] : null;
+  return !!(
+    card && (
+      card.advanced ||
+      (set && (set.advanced || set.type === 'advanced')) ||
+      isAdvancedKey(key)
+    )
+  );
+}
+
+function advanceScheduledCards(cards = runtime.originalDeck, advanceMs = SRS_CYCLE_ADVANCE_MS) {
+  const now = Date.now();
+  // A base card and its derived second-aorist card share one progress entry;
+  // advance it once, not once per face.
+  const advanced = new Set();
+  (cards || []).forEach(card => {
+    const progressId = progressCardId(card.id);
+    if (advanced.has(progressId)) return;
+    advanced.add(progressId);
+    const progress = getWordProgress(card.id);
+    if (progress.dueAt && progress.dueAt > now) {
+      progress.dueAt = Math.max(now, progress.dueAt - advanceMs);
+      progress.intervalDays = Math.max(0, daysFromMs(progress.dueAt - now));
+    }
+  });
+}
+
+// Read-only callers (deck building, review list, analytics, scheduling
+// queries) far outnumber the handful that actually record progress. Only the
+// latter pass { persist: true }; everyone else gets a throwaway default object
+// and the store is never polluted with no-information entries — which is what
+// kept bloating both the in-memory state and the saved payload.
+function getWordProgress(cardId, { persist = false } = {}) {
+  // Derived second-aorist cards share their base card's progress entry —
+  // reviewing εἶπον records onto λέγω's stats (and schedule). Deck mechanics
+  // (marks, cycle state, deck order) keep the suffixed id; only this
+  // progress-store identity is normalized.
+  cardId = progressCardId(cardId);
+  const progressStore = getDirectionalProgressStore();
+  const existing = progressStore[cardId];
+  if (existing && typeof existing === 'object') {
+    existing.seenCount = Number.isFinite(existing.seenCount) ? Math.max(0, existing.seenCount) : 0;
+    existing.passCount = Number.isFinite(existing.passCount) ? Math.max(0, existing.passCount) : 0;
+    existing.failCount = Number.isFinite(existing.failCount) ? Math.max(0, existing.failCount) : 0;
+    existing.streak = Number.isFinite(existing.streak) ? Math.max(0, existing.streak) : 0;
+    existing.easyStreak = Number.isFinite(existing.easyStreak) ? Math.max(0, existing.easyStreak) : 0;
+    existing.srsStage = Number.isFinite(existing.srsStage) ? Math.max(0, Math.floor(existing.srsStage)) : 0;
+    existing.ease = clamp(Number.isFinite(existing.ease) ? existing.ease : 2.3, 1.3, 3.0);
+    existing.intervalDays = Number.isFinite(existing.intervalDays) ? Math.max(0, existing.intervalDays) : 0;
+    existing.lastEasyIntervalDays = Number.isFinite(existing.lastEasyIntervalDays) ? Math.max(0, existing.lastEasyIntervalDays) : 0;
+    existing.dueAt = Number.isFinite(existing.dueAt) ? Math.max(0, existing.dueAt) : 0;
+    existing.lastReviewedAt = Number.isFinite(existing.lastReviewedAt) ? Math.max(0, existing.lastReviewedAt) : 0;
+    existing.firstSeenAt = Number.isFinite(existing.firstSeenAt) ? Math.max(0, existing.firstSeenAt) : 0;
+    existing.firstConfirmedAt = Number.isFinite(existing.firstConfirmedAt) ? Math.max(0, existing.firstConfirmedAt) : 0;
+    existing.confidence = Number.isFinite(existing.confidence) ? Math.max(0, existing.confidence) : 0;
+    existing.confidenceHistory = Array.isArray(existing.confidenceHistory) ? existing.confidenceHistory.filter(value => Number.isFinite(value)).slice(-10) : [];
+    // Lapse / relearn ladder + leech + variant-cycle bookkeeping (see
+    // applySpacedReview). All default to a no-lapse, no-cycle state so legacy
+    // entries keep their current schedule.
+    existing.inRelearn = existing.inRelearn === true;
+    existing.relearnLeft = Number.isFinite(existing.relearnLeft) ? Math.max(0, Math.floor(existing.relearnLeft)) : 0;
+    existing.preLapseIntervalDays = Number.isFinite(existing.preLapseIntervalDays) ? Math.max(0, existing.preLapseIntervalDays) : 0;
+    existing.lapseCount = Number.isFinite(existing.lapseCount) ? Math.max(0, Math.floor(existing.lapseCount)) : 0;
+    existing.leechDrill = existing.leechDrill === true;
+    existing.leechStreak = Number.isFinite(existing.leechStreak) ? Math.max(0, Math.floor(existing.leechStreak)) : 0;
+    existing.cycleFacesPassed = Array.isArray(existing.cycleFacesPassed) ? existing.cycleFacesPassed.filter(f => typeof f === 'string') : [];
+    existing.cycleFacesUncertain = Array.isArray(existing.cycleFacesUncertain) ? existing.cycleFacesUncertain.filter(f => typeof f === 'string') : [];
+    existing.cycleFacesHeld = (existing.cycleFacesHeld && typeof existing.cycleFacesHeld === 'object' && !Array.isArray(existing.cycleFacesHeld)) ? existing.cycleFacesHeld : {};
+    existing.cycleStartedAt = Number.isFinite(existing.cycleStartedAt) ? Math.max(0, existing.cycleStartedAt) : 0;
+    existing.cycleFaceSamples = (existing.cycleFaceSamples && typeof existing.cycleFaceSamples === 'object' && !Array.isArray(existing.cycleFaceSamples)) ? existing.cycleFaceSamples : {};
+    return existing;
+  }
+  const fresh = {
+    seenCount: 0,
+    passCount: 0,
+    failCount: 0,
+    streak: 0,
+    easyStreak: 0,
+    srsStage: 0,
+    ease: 2.3,
+    intervalDays: 0,
+    lastEasyIntervalDays: 0,
+    dueAt: 0,
+    lastReviewedAt: 0,
+    firstSeenAt: 0,
+    firstConfirmedAt: 0,
+    confidence: 0,
+    confidenceHistory: [],
+    inRelearn: false,
+    relearnLeft: 0,
+    preLapseIntervalDays: 0,
+    lapseCount: 0,
+    leechDrill: false,
+    leechStreak: 0,
+    cycleFacesPassed: [],
+    cycleFacesUncertain: [],
+    cycleFacesHeld: {},
+    cycleStartedAt: 0,
+    cycleFaceSamples: {}
+  };
+  if (persist) progressStore[cardId] = fresh;
+  return fresh;
+}
+
+function isCardDue(card) {
+  if (!runtime.spacedRepetition) return true;
+  const progress = getWordProgress(card.id);
+  const naturallyDue = !progress.dueAt || progress.dueAt <= Date.now();
+
+  // Variant-form round model: cards that share one progress entry — a base verb
+  // and its derived principal-part faces (the "… as cards" toggles) — run as a
+  // ROUND, one attempt at the whole set bounded by a 2 h window from when its
+  // first face is seen (progress.cycleStartedAt). Each face is marked until it
+  // reaches a FINAL disposition this round — Easy (cycleFacesPassed) or Uncertain
+  // (cycleFacesUncertain); a Hard just requeues the face (no final mark). A face
+  // that is final is parked OUT of "Due now" (deferred until the round resolves);
+  // a face still pending (unreached, or Hard-requeued) stays due so it keeps
+  // surfacing. The set only advances its shared schedule when EVERY face is
+  // cleared Easy in one round (see applySpacedReview); any Uncertain in the mix —
+  // or the 2 h window elapsing with faces still pending — resets the whole set so
+  // it can be re-attempted. Each round close records one confidence sample (mean
+  // across faces, an unreached form counting 0%). See applySpacedReview /
+  // getVariantCycleInfo / endVariantRound.
+  const info = getVariantCycleInfo(card);
+  if (info) {
+    const passed = progress.cycleFacesPassed;
+    const uncertain = progress.cycleFacesUncertain || [];
+    const inProgress = progress.cycleStartedAt > 0
+      || passed.length > 0
+      || uncertain.length > 0
+      || (progress.cycleFacesHeld && Object.keys(progress.cycleFacesHeld).length > 0);
+    if (naturallyDue) {
+      // The shared 2 h round window has elapsed (or a fresh sitting): close out
+      // any in-progress round — recording its confidence with unreached faces at
+      // 0% — then put the WHOLE set due-now so a fresh round begins cleanly with
+      // every face surfaceable again (an incomplete set, where not all faces were
+      // cleared in time, isn't left half-done — all forms reset to due now).
+      if (inProgress) {
+        endVariantRound(progress, info.siblingFaces);
+        progress.dueAt = Date.now();
+        progress.intervalDays = 0;
+      }
+      return true;
+    }
+    if (!inProgress) return false;                   // set scheduled out, not mid-round
+    if (passed.includes(info.face)) return false;    // Easy-cleared this round → parked
+    if (uncertain.includes(info.face)) return false; // Uncertain this round → parked (deferred)
+    return true;                                     // pending face → due now (unreached / Hard-requeued)
+  }
+  return naturallyDue;
+}
+
+// Close out a variant set's current round: record its confidence (mean across
+// all active faces, a face never reached this round counting 0%) and clear the
+// per-round bookkeeping so the next review opens a fresh round. The confidence
+// is only recorded for a real, post-change round (cycleStartedAt set) — a legacy
+// mid-cycle entry with no start stamp is just reset, never scored a spurious 0.
+function endVariantRound(progress, siblingFaces) {
+  if (progress.cycleStartedAt > 0) recordVariantRoundConfidence(progress, siblingFaces);
+  progress.cycleFacesPassed = [];
+  progress.cycleFacesUncertain = [];
+  progress.cycleFacesHeld = {};
+  progress.cycleStartedAt = 0;
+  progress.cycleFaceSamples = {};
+}
+
+// Map of shared-progress id → set of face keys currently in the deck, memoized
+// against runtime.originalDeck (which already reflects the "… as cards" toggles,
+// so a face only appears here while its toggle is on). A progress id with two+
+// faces is a variant set subject to all-forms gating.
+let variantFacesCache = { deck: null, map: new Map() };
+function getVariantFacesMap() {
+  const deck = runtime.originalDeck || [];
+  if (variantFacesCache.deck === deck) return variantFacesCache.map;
+  const map = new Map();
+  deck.forEach(card => {
+    const face = derivedCardFaceKey(card);
+    if (!face) return;
+    const pid = progressCardId(card.id);
+    if (!map.has(pid)) map.set(pid, new Set());
+    map.get(pid).add(face);
+  });
+  variantFacesCache = { deck, map };
+  return map;
+}
+
+// For a card that belongs to a multi-face variant set, its own face key plus the
+// set of sibling faces in play. Returns null for ordinary single-face cards
+// (and for variant lemmas whose derived toggles are all off, so only the base
+// face is in the deck) — those have no all-forms gating.
+function getVariantCycleInfo(card) {
+  // Cheap reject first: only cards whose shared id has 2+ faces in the deck can
+  // be gated, so skip the flip-set scan in derivedCardFaceKey for everyone else.
+  const faces = getVariantFacesMap().get(progressCardId(card.id));
+  if (!faces || faces.size <= 1) return null;
+  const face = derivedCardFaceKey(card);
+  if (!face) return null;
+  return { face, siblingFaces: faces, siblingCount: faces.size };
+}
+
+function sortCardsByDue(cards) {
+  return [...cards].sort((a, b) => {
+    const aDue = getWordProgress(a.id).dueAt || 0;
+    const bDue = getWordProgress(b.id).dueAt || 0;
+    if (aDue !== bDue) return aDue - bDue;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function clearSpacedUndoSnapshot() {
+  // Clears both the single-level spaced/morph snapshot and the unspaced
+  // history stack. The two share the same "the deck context just
+  // changed, drop any pending undo" invalidation points (mode toggles,
+  // deck rebuilds, resets, selection changes), so collapsing them into
+  // one clear keeps every call site honest.
+  runtime.spacedUndoSnapshot = null;
+  runtime.unspacedHistory = [];
+}
+
+// Snapshot of everything markCard / applyUnspacedMark / a reshuffle can
+// mutate. Used by both the single-shot spaced/morph undo and the
+// multi-step unspaced history stack.
+function buildUndoSnapshot(extra = {}) {
+  return {
+    selectedKeys: cloneForUndo(runtime.selectedKeys),
+    currentSessionId: runtime.currentSession ? runtime.currentSession.id : null,
+    studyMode: runtime.studyMode,
+    directionToGreek: runtime.directionToGreek,
+    requiredOnly: runtime.requiredOnly,
+    shuffled: runtime.shuffled,
+    spacedRepetition: runtime.spacedRepetition,
+    currentIdx: runtime.currentIdx,
+    activeDeckCount: runtime.activeDeckCount,
+    isFlipped: runtime.isFlipped,
+    unspacedPendingRecycle: runtime.unspacedPendingRecycle,
+    unspacedRoundSize: runtime.unspacedRoundSize,
+    unspacedRoundMarks: runtime.unspacedRoundMarks,
+    unspacedMiddleIds: Array.from(runtime.unspacedMiddleIds || []),
+    unspacedMiddleCount: runtime.unspacedMiddleCount || 0,
+    // Three-deck spaced state — captured here so the 2% revival (which can
+    // fire between the snapshot and the next user action) doesn't leave
+    // stale spacedActiveIds/middleDeckCount lying around after an undo.
+    // Without this, the visible card is correct after undo but the next
+    // navigation can mis-route end-of-active or treat a card as middle when
+    // it should be active.
+    spacedActiveIds: Array.isArray(runtime.spacedActiveIds) ? [...runtime.spacedActiveIds] : [],
+    middleDeckCount: runtime.middleDeckCount || 0,
+    lastStudyActivityAt: runtime.lastStudyActivityAt || 0,
+    unspacedCycleState: cloneForUndo(runtime.unspacedCycleState),
+    lastUnspacedArchiveDayKey: runtime.lastUnspacedArchiveDayKey,
+    morphAnswerState: cloneForUndo(runtime.morphAnswerState),
+    morphPendingAdvance: runtime.morphPendingAdvance,
+    deck: cloneForUndo(runtime.deck),
+    originalDeck: cloneForUndo(runtime.originalDeck),
+    marksStore: cloneForUndo(getDirectionalMarksStore()),
+    progressStore: cloneForUndo(getDirectionalProgressStore()),
+    appUsageStats: cloneForUndo(runtime.appUsageStats),
+    appGamification: cloneForUndo(runtime.appGamification),
+    ...extra
+  };
+}
+
+// Restore runtime.* from a previously built snapshot. Returns false if
+// the snapshot is incompatible with the current selection/mode (in
+// which case the caller should discard it rather than apply).
+function applyUndoSnapshot(snapshot) {
+  if (!snapshot) return false;
+  if (runtime.studyMode !== snapshot.studyMode) return false;
+  if (runtime.directionToGreek !== snapshot.directionToGreek) return false;
+  if (runtime.requiredOnly !== snapshot.requiredOnly) return false;
+  if (runtime.shuffled !== snapshot.shuffled) return false;
+  if (runtime.spacedRepetition !== snapshot.spacedRepetition) return false;
+  if (JSON.stringify(runtime.selectedKeys) !== JSON.stringify(snapshot.selectedKeys || [])) return false;
+  if ((runtime.currentSession ? runtime.currentSession.id : null) !== (snapshot.currentSessionId || null)) return false;
+
+  const marksStore = getDirectionalMarksStore();
+  Object.keys(marksStore).forEach(key => delete marksStore[key]);
+  Object.assign(marksStore, cloneForUndo(snapshot.marksStore) || {});
+
+  const progressStore = getDirectionalProgressStore();
+  Object.keys(progressStore).forEach(key => delete progressStore[key]);
+  Object.assign(progressStore, cloneForUndo(snapshot.progressStore) || {});
+
+  runtime.marks = marksStore;
+  runtime.originalDeck = cloneForUndo(snapshot.originalDeck) || [];
+  runtime.deck = cloneForUndo(snapshot.deck) || [];
+  runtime.appUsageStats = ensureUsageStats(cloneForUndo(snapshot.appUsageStats));
+  runtime.appGamification = sanitizeGamificationState(cloneForUndo(snapshot.appGamification));
+  const restoredLevel = computeXpAndLevel(runtime.appUsageStats).currentLevel.level;
+  if (!Number.isFinite(runtime.appGamification.lastCelebratedLevel) || runtime.appGamification.lastCelebratedLevel < 1 || runtime.appGamification.lastCelebratedLevel > restoredLevel) {
+    runtime.appGamification.lastCelebratedLevel = restoredLevel;
+  }
+  // Reshuffle entries park the cursor at deck.length, so clamp to deck.length
+  // (inclusive) rather than deck.length - 1.
+  const maxIdx = runtime.deck.length;
+  runtime.currentIdx = Math.max(0, Math.min(snapshot.currentIdx || 0, maxIdx));
+  runtime.activeDeckCount = Math.max(0, snapshot.activeDeckCount || 0);
+  runtime.isFlipped = !!snapshot.isFlipped;
+  runtime.unspacedPendingRecycle = !!snapshot.unspacedPendingRecycle;
+  if (Number.isFinite(snapshot.unspacedRoundSize)) runtime.unspacedRoundSize = snapshot.unspacedRoundSize;
+  if (Number.isFinite(snapshot.unspacedRoundMarks)) runtime.unspacedRoundMarks = snapshot.unspacedRoundMarks;
+  if (Array.isArray(snapshot.unspacedMiddleIds)) runtime.unspacedMiddleIds = new Set(snapshot.unspacedMiddleIds);
+  if (Number.isFinite(snapshot.unspacedMiddleCount)) runtime.unspacedMiddleCount = snapshot.unspacedMiddleCount;
+  if (Array.isArray(snapshot.spacedActiveIds)) runtime.spacedActiveIds = [...snapshot.spacedActiveIds];
+  if (Number.isFinite(snapshot.middleDeckCount)) runtime.middleDeckCount = snapshot.middleDeckCount;
+  if (Number.isFinite(snapshot.lastStudyActivityAt)) runtime.lastStudyActivityAt = snapshot.lastStudyActivityAt;
+  if (snapshot.unspacedCycleState) runtime.unspacedCycleState = cloneForUndo(snapshot.unspacedCycleState);
+  if (typeof snapshot.lastUnspacedArchiveDayKey === 'string') runtime.lastUnspacedArchiveDayKey = snapshot.lastUnspacedArchiveDayKey;
+  if (isMorphologyMode() && snapshot.morphAnswerState) {
+    runtime.morphAnswerState = cloneForUndo(snapshot.morphAnswerState);
+    runtime.morphPendingAdvance = !!snapshot.morphPendingAdvance;
+  } else {
+    resetMorphAnswerState();
+  }
+  return true;
+}
+
+function captureSpacedUndoSnapshot() {
+  if (!runtime.selectedKeys.length || !runtime.deck[runtime.currentIdx]) {
+    runtime.spacedUndoSnapshot = null;
+    return;
+  }
+  if (runtime.spacedRepetition && runtime.currentIdx >= runtime.activeDeckCount) {
+    runtime.spacedUndoSnapshot = null;
+    return;
+  }
+  runtime.spacedUndoSnapshot = buildUndoSnapshot();
+}
+
+// Capacity cap on the unspaced history stack — full snapshots aren't
+// tiny, and the user gets multi-step Prev without keeping every
+// breadcrumb from a long session in memory.
+const UNSPACED_HISTORY_MAX = 30;
+
+// Push a snapshot tagged with the kind of action it's the inverse of.
+// 'mark' entries roll back a confidence-impacting Hard/Uncertain/Easy
+// (Prev label shows "↶ Undo"); 'next' entries roll back the neutral
+// pass; 'reshuffle' entries roll back the end-of-deck shuffle.
+function pushUnspacedHistory(entryType) {
+  if (!Array.isArray(runtime.unspacedHistory)) runtime.unspacedHistory = [];
+  if (!runtime.selectedKeys.length) return;
+  // Reshuffles capture from the end-of-deck parked state, where
+  // deck[currentIdx] is undefined; everything else needs a real card.
+  if (entryType !== 'reshuffle' && (runtime.currentIdx >= runtime.deck.length || !runtime.deck[runtime.currentIdx])) return;
+
+  const snapshot = buildUndoSnapshot({ entryType });
+  runtime.unspacedHistory.push(snapshot);
+  if (runtime.unspacedHistory.length > UNSPACED_HISTORY_MAX) {
+    runtime.unspacedHistory.splice(0, runtime.unspacedHistory.length - UNSPACED_HISTORY_MAX);
+  }
+}
+
+function restoreUnspacedHistoryStep() {
+  if (!Array.isArray(runtime.unspacedHistory) || !runtime.unspacedHistory.length) return false;
+  const snapshot = runtime.unspacedHistory.pop();
+  const restored = applyUndoSnapshot(snapshot);
+  if (!restored) {
+    // Snapshot from a different mode/selection — discard the whole stack
+    // rather than leaving incompatible entries to surface later.
+    runtime.unspacedHistory = [];
+    return false;
+  }
+  renderCard();
+  renderReview();
+  renderProgress();
+  syncLayoutVisibility();
+  saveState();
+  return true;
+}
+
+function getUnspacedHistoryTopType() {
+  if (!Array.isArray(runtime.unspacedHistory) || !runtime.unspacedHistory.length) return null;
+  return runtime.unspacedHistory[runtime.unspacedHistory.length - 1].entryType || null;
+}
+
+function restoreSpacedUndo() {
+  if (!runtime.spacedUndoSnapshot) return;
+  const restored = applyUndoSnapshot(runtime.spacedUndoSnapshot);
+  if (!restored) return;
+  clearSpacedUndoSnapshot();
+  renderCard();
+  renderReview();
+  renderProgress();
+  syncLayoutVisibility();
+  saveState();
+}
+
+// Returns a deck where deck[0] is guaranteed not to equal avoidHeadId — used
+// to prevent a card the user just saw at the end of one cycle from appearing
+// first in the very next cycle. Mutates the input array in place.
+function avoidHeadCollision(deck, avoidHeadId) {
+  if (!avoidHeadId || !Array.isArray(deck) || deck.length < 2) return deck;
+  if (!deck[0] || deck[0].id !== avoidHeadId) return deck;
+  // Pick a random later slot to swap into; the original head moves elsewhere
+  // in the deck rather than being deferred to the very end (which would be
+  // predictable). With ≥ 2 cards there's always at least one valid swap.
+  const swapIdx = 1 + Math.floor(Math.random() * (deck.length - 1));
+  [deck[0], deck[swapIdx]] = [deck[swapIdx], deck[0]];
+  return deck;
+}
+
+function buildStudyDeck(cards, options = {}) {
+  // Parsing owns its deck ordering: a status-weighted shuffle (orderParsingPool)
+  // that floats unseen/wrong forms ahead of mastered ones, rather than the
+  // spaced/unspaced pile machinery below. It carries no SRS schedule and no
+  // archive pile — every in-scope form is part of the active deck — so the
+  // ordered pool is the whole deck. (Cycle boundaries go through
+  // rebuildParsingCycle, which shares the same ordering.)
+  if (isParsingMode()) {
+    const ordered = orderParsingPool(cards || []);
+    avoidHeadCollision(ordered, options.avoidHeadId);
+    runtime.activeDeckCount = ordered.length;
+    return ordered;
+  }
+  if (!runtime.spacedRepetition) {
+    // Unspaced flip deck has three sections: [active..., middle..., known...].
+    //   active — cards not yet seen this round (the in-flight pile).
+    //   middle — cards Hard/Uncertain-marked this round, parked until the
+    //            next reshuffle so they don't reappear before the round ends.
+    //   known  — Easy-archived cards; stay out until the user resets.
+    // Default: every fresh build starts a new round, so middle clears and
+    // every unmarked card collapses back into active. Callers that need to
+    // preserve mid-round middle membership pass preserveUnspacedRound: true.
+    if (options.preserveUnspacedRound !== true) {
+      runtime.unspacedMiddleIds = new Set();
+    }
+    const middleIds = runtime.unspacedMiddleIds || new Set();
+    const active = cards.filter(card => runtime.marks[card.id] !== 'known' && !middleIds.has(card.id));
+    const middle = cards.filter(card => runtime.marks[card.id] !== 'known' && middleIds.has(card.id));
+    const known = cards.filter(card => runtime.marks[card.id] === 'known');
+    runtime.activeDeckCount = active.length;
+    runtime.unspacedMiddleCount = middle.length;
+    const orderedActive = runtime.shuffled ? shuffleArray([...active]) : [...active];
+    avoidHeadCollision(orderedActive, options.avoidHeadId);
+    if (options.preserveUnspacedRound !== true) {
+      runtime.unspacedRoundSize = orderedActive.length;
+      runtime.unspacedRoundMarks = 0;
+    }
+    return [...orderedActive, ...middle, ...known];
+  }
+
+  // Three-section spaced deck: [active..., middle..., deferred...].
+  //   active  — due-now cards already in the in-flight rotation. Drains as
+  //             the user reviews; preserved in order across rebuilds.
+  //   middle  — due-now cards that weren't in active when the session
+  //             started (their dueAt timer expired mid-session, OR they got
+  //             pushed back to due by ✕-return). Doesn't interrupt the
+  //             active rotation; only joins active when active drains,
+  //             when the user hits the Reshuffle button, on a 2% revival,
+  //             or after a ≥ 5 h idle gap.
+  //   deferred — dueAt in the future, sorted by dueAt.
+  // runtime.spacedActiveIds is the source of truth for who lives in active;
+  // it's filtered on every rebuild against the currently-due set, so reviewed
+  // cards (now scheduled forward) drop out automatically.
+  const forceShuffle = !!options.forceShuffle;
+  const shuffleActive = !!options.shuffleActive;
+  const now = Date.now();
+  let promotedNearCards = false;
+  let dueCards = cards.filter(isCardDue);
+
+  // Backstop: if nothing is due but cards are deferred within 30 minutes,
+  // promote them to due immediately so the user never hits a dead deck.
+  if (!dueCards.length) {
+    const nearCards = cards.filter(card => {
+      const p = getWordProgress(card.id);
+      return p.dueAt && p.dueAt > now && p.dueAt <= now + SRS_NEAR_WINDOW_MS;
+    });
+    if (nearCards.length) {
+      nearCards.forEach(card => {
+        const progress = getWordProgress(card.id);
+        progress.dueAt = now;
+        progress.intervalDays = 0;
+      });
+      promotedNearCards = true;
+      dueCards = cards.filter(isCardDue);
+    }
+  }
+
+  const deferredCards = cards.filter(card => !isCardDue(card));
+  const dueIds = new Set(dueCards.map(c => c.id));
+
+  // Drop any carry-over IDs that aren't due anymore (reviewed cards that
+  // got bumped to deferred, or stale IDs from a different deck after a
+  // mode/chapter switch).
+  const carriedActiveIds = (runtime.spacedActiveIds || []).filter(id => dueIds.has(id));
+
+  // Treat as a fresh start when:
+  //  - the caller asked for it (forceShuffle: manual reshuffle, active-drain
+  //    dump, or restore path),
+  //  - the near-due backstop just fired (no real active to carry forward),
+  //  - the last card flip was ≥ 5 h ago (genuine idle gap), or
+  //  - there's no carry-over at all (initial build, post-reload, post-reset,
+  //    or deck-identity change so no previous active IDs match the new deck).
+  // Use the previous-activity snapshot (taken at the start of the current
+  // noteStudyInteraction call) so the idle gap reflects time since the
+  // PREVIOUS activity, not the one we just recorded a millisecond ago.
+  const lastActivityAt = Number(runtime.previousStudyActivityAt) || 0;
+  const idleReset = lastActivityAt && (now - lastActivityAt > SESSION_IDLE_RESET_MS);
+  // Parsing mode keeps no SRS state, so the carry-over machinery (preserve
+  // the previous session's in-flight active order) has nothing meaningful to
+  // hold onto — and skipping freshStart would mean a reload restores the
+  // previously-shown card order rather than re-shuffling. Always freshStart
+  // in parsing mode so each load resamples the deck.
+  const freshStart = forceShuffle || promotedNearCards || idleReset || carriedActiveIds.length === 0 || isParsingMode();
+
+  let activeDue;
+  let middleDue;
+  if (freshStart) {
+    // Everything currently due collapses into active; middle clears.
+    activeDue = runtime.shuffled ? shuffleArray([...dueCards]) : sortCardsByDue(dueCards);
+    avoidHeadCollision(activeDue, options.avoidHeadId);
+    middleDue = [];
+  } else {
+    // Continue session: preserve the in-flight active order from the
+    // previous deck where possible; anything else due lives in middle.
+    const carriedSet = new Set(carriedActiveIds);
+    const seen = new Set();
+    const orderedFromPrev = [];
+    (runtime.deck || []).forEach(card => {
+      if (!card || !carriedSet.has(card.id) || seen.has(card.id)) return;
+      const match = dueCards.find(d => d.id === card.id);
+      if (match) {
+        orderedFromPrev.push(match);
+        seen.add(card.id);
+      }
+    });
+    const orphans = carriedActiveIds
+      .filter(id => !seen.has(id))
+      .map(id => dueCards.find(d => d.id === id))
+      .filter(Boolean);
+    activeDue = [...orderedFromPrev, ...orphans];
+    if (shuffleActive) activeDue = shuffleArray(activeDue);
+    middleDue = sortCardsByDue(dueCards.filter(c => !carriedSet.has(c.id)));
+  }
+
+  runtime.spacedActiveIds = activeDue.map(c => c.id);
+  runtime.activeDeckCount = activeDue.length;
+  runtime.middleDeckCount = middleDue.length;
+  const orderedDeferred = sortCardsByDue(deferredCards);
+  return [...activeDue, ...middleDue, ...orderedDeferred];
+}
+
+// `skipConfidence` is set by the variant-set path (spaced mode): those cards
+// score confidence once per ROUND from the mean of their faces, not once per
+// face review, so the per-review rolling sample is suppressed here and the
+// round sample is recorded by endVariantRound instead.
+function recordStudyOutcome(cardId, outcome, reviewedAt = Date.now(), { skipConfidence = false } = {}) {
+  const progress = getWordProgress(cardId, { persist: true });
+  const isFirstConfirmation = !progress.firstConfirmedAt;
+  const xpAward = computeCardXpAward(outcome, isFirstConfirmation, runtime.spacedRepetition);
+  const usage = ensureUsageStats();
+  if (usage.cardXpEarned < 0) migrateLegacyXp(usage);
+  usage.cardXpEarned = (usage.cardXpEarned || 0) + xpAward;
+  progress.seenCount += 1;
+  progress.lastReviewedAt = reviewedAt;
+  progress.firstSeenAt = progress.firstSeenAt || reviewedAt;
+  if (!skipConfidence) recordConfidenceSample(progress, outcome);
+  if (!progress.firstConfirmedAt) {
+    const pct = getConfidencePct(progress);
+    if (pct !== null && pct >= 70) progress.firstConfirmedAt = reviewedAt;
+  }
+  if (outcome === 'easy' || outcome === 'known') {
+    progress.passCount += 1;
+    progress.firstConfirmedAt = progress.firstConfirmedAt || reviewedAt;
+  } else {
+    progress.failCount += 1;
+  }
+  return progress;
+}
+
+// Active SRS spacing-cadence preset (2-month intensive vs 8-month). Read by
+// the schedulers so the same flip lands a shorter or longer next interval
+// depending on the course-length toggle in Advanced settings.
+function getActiveCadence() {
+  return getCadencePreset(runtime.spacingCadence);
+}
+
+function getDeckAggregateStats(cards = runtime.originalDeck) {
+  // Shared base/second-aorist progress entries count once, not per face.
+  const counted = new Set();
+  return (cards || []).reduce((totals, card) => {
+    const progressId = progressCardId(card.id);
+    if (counted.has(progressId)) return totals;
+    counted.add(progressId);
+    const progress = getWordProgress(card.id);
+    totals.seenCount += progress.seenCount || 0;
+    totals.passCount += progress.passCount || 0;
+    totals.failCount += progress.failCount || 0;
+    return totals;
+  }, { seenCount: 0, passCount: 0, failCount: 0 });
+}
+
+// Pre-lapse interval to resume at half of: the largest "real" spacing the card
+// had before it slipped (its last easy step or its current interval), captured
+// before the lapse resets the live interval.
+function preLapseIntervalDays(progress) {
+  return Math.max(getLastEasyIntervalDays(progress), Number(progress.intervalDays) || 0);
+}
+
+// Normal "easy" growth: confidence/ease-scaled step up the cadence ramp.
+function applyEasyGrowth(progress, cadence, now) {
+  const nextIntervalDays = getNextEasyIntervalDays(progress, cadence);
+  progress.streak += 1;
+  progress.easyStreak = (progress.easyStreak || 0) + 1;
+  progress.srsStage = getSrsStage(progress) + 1;
+  progress.ease = clamp(getSrsEase(progress) + 0.08, 1.3, 3.0);
+  progress.lastEasyIntervalDays = nextIntervalDays;
+  progress.firstConfirmedAt = progress.firstConfirmedAt || now;
+  setProgressDelay(progress, msFromDays(nextIntervalDays), now);
+}
+
+// Resume after a relearn ladder (or leech unpin): pick up at HALF the pre-lapse
+// interval, capped per cadence and floored at one relearn step, so weeks of
+// spacing aren't lost to a single slip.
+function resumeAfterLapse(progress, cadence, now) {
+  const resumeDays = clamp(preLapseIntervalDays(progress) * 0.5, SRS_RELEARN_STEP_DAYS, cadence.lapseResumeCapDays);
+  progress.inRelearn = false;
+  progress.relearnLeft = 0;
+  progress.streak += 1;
+  progress.easyStreak = (progress.easyStreak || 0) + 1;
+  progress.lastEasyIntervalDays = resumeDays;
+  setProgressDelay(progress, msFromDays(resumeDays), now);
+}
+
+// Hard lapse: drop ease, count the lapse, and either start the leech drill
+// (8-month, once a card has lapsed too many times) or the in-session relearn
+// ladder (due now → two 1-day passes → resume at ½). The pre-lapse interval is
+// preserved on the entry so the ladder's short steps don't erase it. Returns
+// true if the card should also be dropped from the active carry-over (it's
+// due-now and should route through the middle pile in-session).
+function applyHardLapse(progress, cadence, now) {
+  progress.streak = 0;
+  progress.easyStreak = 0;
+  progress.srsStage = Math.max(0, getSrsStage(progress) - 1);
+  progress.ease = clamp(getSrsEase(progress) - 0.2, 1.3, 3.0);
+  progress.lapseCount = (progress.lapseCount || 0) + 1;
+
+  // Leech (8-month only): a card that keeps failing is pinned to a 1-day drill
+  // until it earns a clean streak, rebuilding from the bottom.
+  if (cadence.leechEnabled && (progress.leechDrill || progress.lapseCount >= LEECH_LAPSE_THRESHOLD)) {
+    progress.leechDrill = true;
+    progress.leechStreak = 0;
+    progress.inRelearn = false;
+    progress.relearnLeft = 0;
+    progress.lastEasyIntervalDays = LEECH_DRILL_DAYS;
+    setProgressDelay(progress, msFromDays(LEECH_DRILL_DAYS), now);
+    return false;
+  }
+
+  // Capture the pre-lapse spacing once (a re-lapse mid-relearn keeps the
+  // original, not the now-tiny, interval).
+  if (!progress.inRelearn) progress.preLapseIntervalDays = preLapseIntervalDays(progress);
+  progress.inRelearn = true;
+  progress.relearnLeft = SRS_HARD_RELEARN_STEPS;
+  setProgressDelay(progress, 0, now); // due now — relearn in-session
+  return true;
+}
+
+// Uncertain lapse: one confirming pass in 2h, then resume at ½ previous. Ease
+// unchanged. (relearnLeft 0 → the next correct answer resumes directly.)
+function applyUncertainLapse(progress, now) {
+  if (!progress.inRelearn) progress.preLapseIntervalDays = preLapseIntervalDays(progress);
+  progress.inRelearn = true;
+  progress.relearnLeft = 0;
+  progress.streak += 1;
+  progress.easyStreak = 0;
+  setProgressDelay(progress, SRS_UNCERTAIN_MIN_MS, now); // 2h confirming pass
+}
+
+// A correct answer (Easy or Uncertain) while a card is mid-relearn or
+// mid-leech, or starting/continuing those ladders. Returns nothing; mutates
+// the schedule on `progress`.
+function applyCorrectOutcome(progress, cadence, now, ratedOutcome) {
+  // Leech drill: stay pinned at 1 day until LEECH_UNPIN_STREAK clean reviews,
+  // then rejoin normal growth (fall through to the easy ramp from a 1-day base).
+  if (progress.leechDrill) {
+    progress.leechStreak = (progress.leechStreak || 0) + 1;
+    if (progress.leechStreak < LEECH_UNPIN_STREAK) {
+      progress.streak += 1;
+      setProgressDelay(progress, msFromDays(LEECH_DRILL_DAYS), now);
+      return;
+    }
+    progress.leechDrill = false;
+    progress.leechStreak = 0;
+    progress.lapseCount = 0;
+    progress.lastEasyIntervalDays = LEECH_DRILL_DAYS;
+    applyEasyGrowth(progress, cadence, now);
+    return;
+  }
+
+  // Relearn ladder: spend the remaining 1-day steps, then resume at ½ previous.
+  if (progress.inRelearn) {
+    if ((progress.relearnLeft || 0) > 0) {
+      progress.relearnLeft -= 1;
+      progress.streak += 1;
+      setProgressDelay(progress, msFromDays(SRS_RELEARN_STEP_DAYS), now);
+      return;
+    }
+    resumeAfterLapse(progress, cadence, now);
+    return;
+  }
+
+  // Not in any ladder. An Uncertain on an established card IS a lapse — start
+  // the short uncertain relearn (ease unchanged, per spec). An Easy grows.
+  if (ratedOutcome === 'pass') {
+    applyUncertainLapse(progress, now);
+    return;
+  }
+  applyEasyGrowth(progress, cadence, now);
+}
+
+function applySpacedReview(card, outcome) {
+  const now = Date.now();
+  const ratedOutcome = outcome === 'pass' ? 'pass' : outcome === 'easy' ? 'easy' : 'again';
+  const cadence = getActiveCadence();
+  // Variant-form set this card belongs to (null for ordinary single-face cards).
+  const variant = getVariantCycleInfo(card);
+  // Variant sets score confidence once per round (mean of the faces), so the
+  // per-face rolling sample is suppressed here; addVariantFaceSample collects
+  // the face's sample for the round instead.
+  const progress = recordStudyOutcome(card.id, ratedOutcome, now, { skipConfidence: !!variant });
+
+  if (variant) {
+    applyVariantRoundReview(card, ratedOutcome, variant, progress, cadence, now);
+    return;
+  }
+
+  if (ratedOutcome === 'again') {
+    const dropFromActive = applyHardLapse(progress, cadence, now);
+    if (dropFromActive && Array.isArray(runtime.spacedActiveIds)) {
+      runtime.spacedActiveIds = runtime.spacedActiveIds.filter(id => id !== card.id);
+    }
+    getDirectionalMarksStore()[card.id] = 'unsure';
+  } else {
+    applyCorrectOutcome(progress, cadence, now, ratedOutcome);
+    getDirectionalMarksStore()[card.id] = ratedOutcome === 'easy' ? 'known' : 'unsure';
+  }
+
+  progress.lastSpacedOutcome = ratedOutcome;
+  runtime.marks = getDirectionalMarksStore();
+}
+
+// One review of a face in a variant "split card" set (a base verb + its derived
+// principal-part faces sharing one progress entry). The set runs as a ROUND —
+// one attempt at the whole set, bounded by a 2 h window from when its first face
+// is seen — and resolves like this:
+//   • Hard  → requeue the face through the middle pile (no lapse, no round end).
+//             It stays pending, so it keeps coming back until it's Easy/Uncertain.
+//   • Easy  → finalize the face as cleared; it parks out of "Due now" (deferred)
+//             until the round resolves.
+//   • Uncertain → finalize the face as uncertain; it also parks out of "Due now"
+//             (deferred) until the round resolves. It does NOT keep re-surfacing
+//             this sitting — the whole set resets first (see below).
+// Once EVERY face is final (Easy or Uncertain): all-Easy advances the shared
+// schedule (~1 day for a fresh set, growing thereafter); any Uncertain in the
+// mix resets the whole set — every face back to due-now for a fresh round. The
+// 2 h window elapsing with faces still pending resets it the same way (handled
+// in isCardDue). Each round close records one confidence sample.
+function applyVariantRoundReview(card, ratedOutcome, variant, progress, cadence, now) {
+  const marks = getDirectionalMarksStore();
+  // Open a fresh round on the first mark after the previous one ended — or if the
+  // 2 h window of a still-open round has already elapsed (the user came back
+  // late), close that one out first so this mark starts a new attempt.
+  if (progress.cycleStartedAt > 0 && now >= progress.cycleStartedAt + SRS_VARIANT_HOLD_MS) {
+    endVariantRound(progress, variant.siblingFaces);
+  }
+  if (!(progress.cycleStartedAt > 0)) {
+    progress.cycleStartedAt = now;
+    progress.cycleFaceSamples = {};
+  }
+  addVariantFaceSample(progress, variant.face, ratedOutcome);
+
+  // The round shares one deadline: 2 h after its first face was seen.
+  const roundDeadlineMs = Math.max(0, (progress.cycleStartedAt + SRS_VARIANT_HOLD_MS) - now);
+  const finish = () => {
+    progress.lastSpacedOutcome = ratedOutcome;
+    runtime.marks = marks;
+  };
+  // Drop the just-marked face from the active pile so navigate(1) advances to the
+  // next card rather than re-rendering this one (it advances by relying on a
+  // marked card leaving active, not by incrementing the cursor). A pending face
+  // (Hard) returns from "middle" after the other due cards; a final face is
+  // deferred and won't return until the round resolves.
+  const dropFromActive = () => {
+    if (Array.isArray(runtime.spacedActiveIds)) {
+      runtime.spacedActiveIds = runtime.spacedActiveIds.filter(id => id !== card.id);
+    }
+  };
+
+  // Hard / miss → requeue the face (no lapse, no round end). It stays pending and
+  // keeps coming back (via the middle pile) until it's marked Easy or Uncertain.
+  if (ratedOutcome === 'again') {
+    setProgressDelay(progress, roundDeadlineMs, now);
+    dropFromActive();
+    marks[card.id] = 'unsure';
+    finish();
+    return;
+  }
+
+  // Easy or Uncertain → finalize this face (it parks out of "Due now").
+  const passed = new Set(progress.cycleFacesPassed);
+  const uncertain = new Set(progress.cycleFacesUncertain || []);
+  if (ratedOutcome === 'easy') {
+    passed.add(variant.face);
+    uncertain.delete(variant.face);
+    marks[card.id] = 'known';
+  } else { // 'pass' → Uncertain
+    uncertain.add(variant.face);
+    passed.delete(variant.face);
+    marks[card.id] = 'unsure';
+  }
+  progress.cycleFacesPassed = [...passed];
+  progress.cycleFacesUncertain = [...uncertain];
+  progress.streak += 1;
+  setProgressDelay(progress, roundDeadlineMs, now);
+  dropFromActive();
+
+  // Not every face is final yet → leave the round in progress.
+  const allFinal = [...variant.siblingFaces].every(f => passed.has(f) || uncertain.has(f));
+  if (!allFinal) {
+    finish();
+    return;
+  }
+
+  // Every face is final this round. Record the round's confidence, then:
+  if (uncertain.size === 0) {
+    // All Easy → set complete: advance the shared schedule (~1 day for a fresh
+    // set, growing with confidence on later rounds).
+    endVariantRound(progress, variant.siblingFaces);
+    applyCorrectOutcome(progress, cadence, now, 'easy');
+    marks[card.id] = 'known';
+  } else {
+    // Any Uncertain in the mix → reset the whole set: every face back to due-now
+    // for a fresh round so the learner can re-attempt the forms they were unsure
+    // of (along with the rest).
+    endVariantRound(progress, variant.siblingFaces);
+    setProgressDelay(progress, 0, now);
+  }
+  finish();
+}
+
+function getDueCount(cards = runtime.originalDeck) {
+  return (cards || []).filter(isCardDue).length;
+}
+
+// Count of cards that the end-of-deck "advance 1 h" Next press would
+// promote from deferred to due-now. Used by render.js to show the user
+// "(N near-due)" in brackets on the spaced session-complete card so
+// they know whether pressing Next will actually surface more work.
+function getNearDueCount(cards = runtime.originalDeck) {
+  const now = Date.now();
+  const threshold = now + SRS_CYCLE_ADVANCE_MS;
+  return (cards || []).filter(card => {
+    const p = getWordProgress(card.id);
+    return p.dueAt && p.dueAt > now && p.dueAt <= threshold;
+  }).length;
+}
+
+
+
+
+function getMorphSpacedOutcome(card, isCorrect) {
+  if (!isCorrect) return 'again';
+  const progress = getWordProgress(card.id);
+  return progress.lastSpacedOutcome === 'again' ? 'pass' : 'easy';
+}
+
+function answerMorphologyChoice(choiceIndex) {
+  // Multiple-choice answers are only valid in quiz mode; in self-check mode
+  // the choices are hidden, so grading against them (e.g. from the 1-4
+  // keyboard shortcuts) would silently mark the card against an invisible
+  // option.
+  if (!isMorphologyMode() || runtime.morphSelfCheck) return;
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || runtime.morphAnswerState.answered) return;
+
+  const reversed = reverseDisplayActive(card);
+  const choices = reversed ? card.reverseChoices : card.choices;
+  if (!Array.isArray(choices)) return;
+  // An out-of-range index (a digit key beyond the rendered options) must be
+  // ignored, not graded as a wrong answer against `undefined`.
+  if (!Number.isInteger(choiceIndex) || choiceIndex < 0 || choiceIndex >= choices.length) return;
+  noteStudyInteraction();
+
+  captureSpacedUndoSnapshot();
+
+  const selected = choices[choiceIndex];
+  const correctAnswer = reversed ? card.form : card.answer;
+  const isCorrect = selected === correctAnswer;
+  runtime.morphAnswerState = {
+    answered: true,
+    revealed: true,
+    selfRated: true,
+    selectedIndex: choiceIndex,
+    isCorrect
+  };
+
+  if (runtime.spacedRepetition) {
+    applySpacedReview(card, getMorphSpacedOutcome(card, isCorrect));
+    runtime.morphPendingAdvance = true;
+  } else {
+    const mark = isCorrect ? 'known' : 'unsure';
+    const reviewedAt = Date.now();
+    recordStudyOutcome(card.id, isCorrect ? 'known' : 'review', reviewedAt);
+    applyUnspacedSharedSchedule(card, isCorrect ? 'easy' : 'again', reviewedAt);
+    getDirectionalMarksStore()[card.id] = mark;
+    runtime.marks = getDirectionalMarksStore();
+  }
+
+  renderCard();
+  renderProgress();
+  renderReview();
+  saveState();
+}
+
+function revealMorphologyAnswer() {
+  if (!isMorphologyMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || runtime.morphAnswerState.revealed) return;
+  runtime.morphAnswerState = {
+    ...runtime.morphAnswerState,
+    revealed: true
+  };
+  renderCard();
+}
+
+function rateMorphologySelfCheck(isCorrect) {
+  if (!isMorphologyMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || !runtime.morphAnswerState.revealed || runtime.morphAnswerState.answered) return;
+
+  captureSpacedUndoSnapshot();
+
+  runtime.morphAnswerState = {
+    answered: true,
+    revealed: true,
+    selfRated: true,
+    selectedIndex: -1,
+    isCorrect: !!isCorrect
+  };
+
+  if (runtime.spacedRepetition) {
+    applySpacedReview(card, getMorphSpacedOutcome(card, isCorrect));
+    runtime.morphPendingAdvance = true;
+  } else {
+    const mark = isCorrect ? 'known' : 'unsure';
+    const reviewedAt = Date.now();
+    recordStudyOutcome(card.id, isCorrect ? 'known' : 'review', reviewedAt);
+    applyUnspacedSharedSchedule(card, isCorrect ? 'easy' : 'again', reviewedAt);
+    getDirectionalMarksStore()[card.id] = mark;
+    runtime.marks = getDirectionalMarksStore();
+  }
+
+  renderCard();
+  renderProgress();
+  renderReview();
+  saveState();
+}
+
+function markMorphologyDontKnow() {
+  if (!isMorphologyMode()) return;
+  noteStudyInteraction();
+  const card = runtime.deck[runtime.currentIdx];
+  if (!card || runtime.morphAnswerState.answered) return;
+
+  captureSpacedUndoSnapshot();
+
+  runtime.morphAnswerState = {
+    answered: true,
+    revealed: true,
+    selfRated: true,
+    selectedIndex: -1,
+    isCorrect: false
+  };
+
+  if (runtime.spacedRepetition) {
+    applySpacedReview(card, getMorphSpacedOutcome(card, false));
+    runtime.morphPendingAdvance = true;
+  } else {
+    const reviewedAt = Date.now();
+    recordStudyOutcome(card.id, 'review', reviewedAt);
+    applyUnspacedSharedSchedule(card, 'again', reviewedAt);
+    getDirectionalMarksStore()[card.id] = 'unsure';
+    runtime.marks = getDirectionalMarksStore();
+  }
+
+  renderCard();
+  renderProgress();
+  renderReview();
+  saveState();
+}
+
+
+
+function getKnownCount() {
+  return runtime.originalDeck.filter(card => runtime.marks[card.id] === 'known').length;
+}
+
+function getHighConfidenceCount() {
+  return runtime.originalDeck.filter(card => {
+    const pct = getConfidencePct(getWordProgress(card.id));
+    return pct !== null && pct > 75;
+  }).length;
+}
+
+function getRemainingCards() {
+  if (runtime.spacedRepetition) {
+    return runtime.deck.slice(0, runtime.activeDeckCount);
+  }
+  return runtime.deck.filter(card => runtime.marks[card.id] !== 'known');
+}
+
+function moveCardToBackOfActivePile(card) {
+  if (!card) return false;
+  const directionalMarks = getDirectionalMarksStore();
+
+  const currentCardId = runtime.deck[runtime.currentIdx]?.id || null;
+  directionalMarks[card.id] = 'unsure';
+  runtime.marks = directionalMarks;
+
+  runtime.deck = runtime.deck.filter(candidate => candidate.id !== card.id);
+  const splitAt = runtime.deck.findIndex(candidate => runtime.marks[candidate.id] === 'known');
+  const insertAt = splitAt === -1 ? runtime.deck.length : splitAt;
+  runtime.deck.splice(insertAt, 0, card);
+
+  runtime.activeDeckCount = runtime.originalDeck.filter(candidate => runtime.marks[candidate.id] !== 'known').length;
+  if (currentCardId) {
+    const restoredIdx = runtime.deck.findIndex(candidate => candidate.id === currentCardId);
+    if (restoredIdx >= 0) runtime.currentIdx = restoredIdx;
+  }
+  runtime.unspacedPendingRecycle = false;
+  return true;
+}
+
+// Unspaced flip-deck hourly upcoming-cards reshuffle. Kept on its old
+// cadence — the unspaced flow has no middle deck and still benefits from
+// occasional order churn during long sessions.
+const PERIODIC_RESHUFFLE_MIN_MS = 60 * 60 * 1000;
+
+function maybePeriodicReshuffle() {
+  // Spaced mode handles session boundaries inside buildStudyDeck via
+  // SESSION_IDLE_RESET_MS, so there's nothing for this hook to do.
+  if (runtime.spacedRepetition) return;
+  if (!runtime.shuffled) return;
+  runtime.flipsSinceReshuffle++;
+  const now = Date.now();
+  const lastAt = Number(runtime.lastPeriodicReshuffleAt) || 0;
+  if (!lastAt) {
+    runtime.lastPeriodicReshuffleAt = now;
+    return;
+  }
+  if (now - lastAt < PERIODIC_RESHUFFLE_MIN_MS) return;
+  runtime.lastPeriodicReshuffleAt = now;
+  runtime.flipsSinceReshuffle = 0;
+  reshuffleUpcomingCards();
+}
+
+// Per-flip ~1/50 (2%) chance to bring one high-confidence (>75%) deferred
+// card back into the active pile. Skipped when shuffle is off or in
+// morphology mode. The picked card is forced due, added to spacedActiveIds
+// so it lands directly in active (not middle), and the active section is
+// reshuffled so the returning card mixes in randomly instead of sitting on
+// the back.
+function maybeReturnConfirmedDeferredCard() {
+  if (!runtime.spacedRepetition || !runtime.shuffled || isMorphologyMode()) return false;
+  if (KNOWN_CARD_RANDOM_RETURN_FLIP_ODDS <= 0) return false;
+  if (Math.random() >= 1 / KNOWN_CARD_RANDOM_RETURN_FLIP_ODDS) return false;
+
+  const eligible = (runtime.originalDeck || []).filter(card => {
+    if (isCardDue(card)) return false;
+    const pct = getConfidencePct(getWordProgress(card.id));
+    return pct !== null && pct > 75;
+  });
+  if (!eligible.length) return false;
+
+  const pick = eligible[Math.floor(Math.random() * eligible.length)];
+  getWordProgress(pick.id).dueAt = Date.now();
+  runtime.spacedActiveIds = [...(runtime.spacedActiveIds || []), pick.id];
+  runtime.deck = buildStudyDeck(runtime.originalDeck, { shuffleActive: true });
+  return true;
+}
+
+function reshuffleUpcomingCards() {
+  const start = runtime.currentIdx + 1;
+  // In spaced mode keep deferred (not-yet-due) cards in their dueAt order at
+  // the tail; only reshuffle the active (due) portion ahead of runtime.currentIdx.
+  const end = runtime.spacedRepetition
+    ? Math.min(runtime.activeDeckCount, runtime.deck.length)
+    : runtime.deck.length;
+  if (start >= end) return;
+  const upcoming = [];
+  const pinned = [];
+  for (let i = start; i < end; i++) {
+    const id = runtime.deck[i].id;
+    if (runtime.marks[id] === 'known' || runtime.unspacedDeferredIds.has(id)) pinned.push(runtime.deck[i]);
+    else upcoming.push(runtime.deck[i]);
+  }
+  if (upcoming.length < 2) return;
+  const tail = runtime.deck.slice(end);
+  runtime.deck = [...runtime.deck.slice(0, start), ...shuffleArray(upcoming), ...pinned, ...tail];
+}
+
+function maybeReturnKnownCardToActivePile() {
+  if (runtime.spacedRepetition || isMorphologyMode() || KNOWN_CARD_RANDOM_RETURN_FLIP_ODDS <= 0) return false;
+  if (!runtime.originalDeck.length || runtime.currentIdx >= runtime.deck.length) return false;
+
+  const currentCardId = runtime.deck[runtime.currentIdx]?.id || null;
+  const knownCards = runtime.originalDeck.filter(card => card.id !== currentCardId && runtime.marks[card.id] === 'known');
+  if (!knownCards.length) return false;
+
+  const returnChance = 1 / KNOWN_CARD_RANDOM_RETURN_FLIP_ODDS;
+  if (Math.random() >= returnChance) return false;
+
+  const card = knownCards[Math.floor(Math.random() * knownCards.length)];
+  return moveCardToBackOfActivePile(card);
+}
+
+
+// Save/restore + JSON export/import + Transfer modal live in js/state/persistence.js
+
+function startNextCycle(mode = 'remaining', options = {}) {
+  runtime.unspacedDeferredIds = new Set();
+  runtime.flipsSinceReshuffle = 0;
+  // A new cycle is a fresh shuffle anchor — reset the hourly timer so the
+  // next periodic reshuffle counts from now.
+  runtime.lastPeriodicReshuffleAt = Date.now();
+  // Parsing mode re-derives its pool from the filtered focused paradigm so
+  // the exclude-known-morphs filter re-runs each cycle (the generic
+  // 'remaining'/'full' paths below just reshuffle originalDeck and would
+  // re-admit a form that became 2/2 known mid-session). saveState below.
+  if (isParsingMode()) {
+    rebuildParsingCycle(options);
+    runtime.unspacedPendingRecycle = false;
+    saveState();
+    return;
+  }
+  if (mode === 'full') {
+    const directionalMarks = getDirectionalMarksStore();
+    (runtime.originalDeck || []).forEach(card => {
+      delete directionalMarks[card.id];
+    });
+    runtime.marks = directionalMarks;
+    const fullDeck = runtime.shuffled
+      ? shuffleArray([...(runtime.originalDeck || [])])
+      : [...(runtime.originalDeck || [])];
+    avoidHeadCollision(fullDeck, options.avoidHeadId);
+    runtime.deck = fullDeck;
+    runtime.currentIdx = fullDeck.length ? 0 : runtime.deck.length;
+  } else {
+    const remaining = runtime.shuffled
+      ? shuffleArray([...getRemainingCards()])
+      : [...getRemainingCards()];
+    avoidHeadCollision(remaining, options.avoidHeadId);
+    const known = (runtime.originalDeck || []).filter(card => runtime.marks[card.id] === 'known');
+    runtime.deck = [...remaining, ...known];
+    runtime.currentIdx = remaining.length ? 0 : runtime.deck.length;
+  }
+  resetUnspacedCycleState();
+  runtime.unspacedPendingRecycle = false;
+  saveState();
+}
+
+// Onclick target for the Next button. Defers to navigate(1), which detects
+// the "deck fully archived" case in unspaced vocab mode and re-routes the
+// press to a no-confirm reset (the button's label morphs to "↻ Reset" via
+// syncLayoutVisibility so the affordance matches the behaviour).
+function handleNavNext() {
+  // Swallow the touch "ghost click" that lands on Next → right after "I give
+  // up" collapses the step rows under the finger (see giveUpMorphologyStep).
+  if (Date.now() < morphGiveUpShieldUntil) return;
+  navigate(1);
+}
+
+function resetStudyState() {
+  runtime.marks = getDirectionalMarksStore();
+  runtime.currentIdx = 0;
+  runtime.activeDeckCount = runtime.spacedRepetition ? getDueCount(runtime.originalDeck) : runtime.originalDeck.filter(card => runtime.marks[card.id] !== 'known').length;
+  // Fresh deck = fresh piles. The previous deck's active ids must not leak
+  // into the next build: selections can share card ids (e.g. adding a
+  // chapter keeps the old chapter's ids), and a stale carry-over would split
+  // the brand-new deck into a bogus active/middle partition.
+  runtime.spacedActiveIds = [];
+  resetUnspacedCycleState();
+  runtime.unspacedPendingRecycle = false;
+  runtime.isFlipped = false;
+}
+
+// Study Selector builders + toggle/deselect/load flow live in js/ui/selectors.js
+// Reader UI (drills + verses) lives in js/ui/reader.js; configured at module-top above.
+// ═══════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════
+// renderCard and flipCard live in js/ui/render.js
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATE + MARK
+// ═══════════════════════════════════════════════════════
+// Navigation, marking, mode/profile setters, toggles and resets live in js/ui/navigation.js
+// ═══════════════════════════════════════════════════════
+//  PROGRESS + REVIEW
+// ═══════════════════════════════════════════════════════
+// Progress bar, Review panel, returnSeenCardToDeck live in js/ui/progress.js
+
+// Modal/overlay control (disclaimer, what's new, study selector, shortcuts,
+// analytics open/close, startStudying) lives in js/ui/modals.js
+
+
+// Touch-safe tap bridge for iOS/pointer quirks lives in js/ui/touchTapBridge.js
+
+// Pure SVG/HTML chart builders and series helpers now live in js/ui/charts.js
+
+// Analytics overlay (renderAnalyticsOverlay + all its compute/build helpers,
+// plus the celebrate-on-level-up plumbing) lives in js/ui/analytics.js
+
+installKeyboardShortcuts({
+  isAnalyticsModalOpen, closeAnalyticsOverlay,
+  isStudySelectorOpen, closeStudySelector,
+  isShortcutsModalOpen, closeShortcutsModal,
+  isWhatsNewV1_5ModalOpen, closeWhatsNewV1_5Modal,
+  isAspectDefaultOffModalOpen, closeAspectDefaultOffModal,
+  isToggleInfoModalOpen, closeToggleInfoModal,
+  isContactAuthorModalOpen, closeContactAuthorModal,
+  isInstallInstructionsOpen, closeInstallInstructions,
+  isDisclaimerModalOpen, isTransferModalOpen, closeTransferModal,
+  isReviewDeckMode,
+  getSelectedKeys: () => runtime.selectedKeys,
+  isMorphologyMode,
+  isMorphSelfCheck: () => !!runtime.morphSelfCheck,
+  navigate, answerMorphologyChoice, revealMorphologyAnswer, rateMorphologySelfCheck,
+  flipCard, markCard
+});
+
+// ═══════════════════════════════════════════════════════
+//  GLOBAL EXPORTS — needed for HTML onclick handlers
+//  Export these BEFORE startup runs, so one later init error does not
+//  leave the page rendered-but-unclickable.
+// ═══════════════════════════════════════════════════════
+const GLOBAL_CLICK_HANDLERS = {
+  flipCard, navigate, markCard, handleNavNext, answerMorphologyChoice,
+  revealMorphologyAnswer, rateMorphologySelfCheck, markMorphologyDontKnow,
+  answerMorphologyStep, skipMorphologyStep, giveUpMorphologyStep, undoMorphologyStep, answerParsingReverseChoice,
+  returnSeenCardToDeck, clearParsingMorph,
+  closeAnalyticsOverlay, closeTransferModal, exportProgressJson,
+  closeShortcutsModal, closeStudySelector,
+  deselectAllChapters, deselectAllSupplementals, deselectAllAdvanced, deselectAllBooks, deselectAll,
+  handleConsentAction, handleTransferPrimaryAction, handleTransferSecondaryAction,
+  openShortcutsModal, openStudySelector,
+  openAnalyticsOverlay, resetAllStats, resetCurrentDeck, resetRequiredOnly,
+  closeResetSpacedModal, updateResetSpacedScopeLabels, confirmResetSpacedTimingOnly, confirmResetSpacedProgress,
+  confirmResetSpacedSmooth,
+  closeResetUnspacedModal, confirmResetUnspacedMarks,
+  openResetStatsModal, closeResetStatsModal,
+  confirmResetStatsKeepSettings, confirmResetToStart,
+  setReviewSortMode,
+  reshuffleEligible,
+  fastForwardOneDay, fastForwardOneWeek,
+  restoreSpacedUndo, setAppProfile, setStudyMode, setThemeMode, setFontFamily, setTextSize,
+  showDisclaimerModal, startStudying, toggleDirection, toggleMorphSelfCheck,
+  toggleMorphStepByStep, setMorphFocusedParadigm, setParsingChapter, goToStemDrillFromParsing,
+  toggleRequiredOnly, toggleHardVocabReview, toggleStemNotes, toggleIrregularCards, toggleIrregularTense, toggleShuffle, toggleSpacedRepetition, toggleSpacingCadence, toggleSplitSelection, toggleAspectStep, toggleDimStep, toggleOptionalForms, toggleOptionalFormFilter, toggleDimValueFilter, toggleExcludeKnownMorphs, toggleParsingShuffleAll, toggleParsingCustomReview, toggleParsingCustomParadigm, setAllParsingCustomParadigms, toggleParsingReverse, toggleParsingLookup, pickLookupDimension, editLookupDimension, resetLookup, toggleAccentLookalikes, resetKnownMorphs, closeResetKnownModal, confirmResetKnownFocused, confirmResetKnownAll, clearParsingStats, toggleUnspacedDailyReset, triggerImportProgress,
+  openReaderTab, selectReaderDrillChoice, advanceReaderDrill,
+  closeWhatsNewV1_5Modal, closeAspectDefaultOffModal, closeToggleInfoModal, onDueHistogramToggle,
+  openContactAuthorModal, closeContactAuthorModal, openExternalLink,
+  triggerInstall, closeInstallInstructions, dontShowInstallAgain
+};
+if (typeof globalThis !== 'undefined') Object.assign(globalThis, GLOBAL_CLICK_HANDLERS);
+if (typeof window !== 'undefined' && window !== globalThis) Object.assign(window, GLOBAL_CLICK_HANDLERS);
+installToggleInfoButtons(); // add (i) info buttons to Advanced-settings toggles
+
+initializeThemeMode();
+initializeFontFamily();
+initializeTextSize();
+// Initial build with default state (needed so restoreState can find DOM elements)
+buildSessions();
+buildChapterSelector();
+buildSupplementalSelector();
+buildAdvancedSelector();
+buildBookVocabSelector();
+if (!restoreState()) {
+  syncToggleButtons(); // reflect default controls on load
+}
+// Rebuild after restore: runtime.appProfile may have changed, affecting grammar summary text
+buildSessions();
+buildChapterSelector();
+buildSupplementalSelector();
+buildAdvancedSelector();
+buildBookVocabSelector();
+initPwaInstall();
+initializeConsentGate();
+if (isReaderMode()) renderReaderModule();
+
+window.addEventListener('greekSupplementalDataChanged', () => {
+  buildSessions();
+  buildChapterSelector();
+  buildSupplementalSelector();
+  buildAdvancedSelector();
+  buildBookVocabSelector();
+  if (runtime.selectedKeys.length && runtime.selectedKeys.some(key => window.SETS?.[key]?.type === 'other')) {
+    const keysToLoad = runtime.currentSession ? expandSessionSets(runtime.currentSession) : runtime.selectedKeys;
+    loadDeckFromKeys(keysToLoad, runtime.currentSession ? runtime.currentSession.id : null);
+  }
+});
+
+const cardArea = document.getElementById('cardArea');
+if (cardArea) {
+  cardArea.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!target || !(target instanceof Element)) return;
+    // Parsing-mode stem-recall redirect button uses .empty-state for layout
+    // but has its own onclick that switches mode + loads the supplemental
+    // deck. Opening the study selector on top of that would be a confusing
+    // double-effect, so skip the delegate for it.
+    if (target.closest('.parsing-redirect-btn')) return;
+    if (target.closest('.empty-state')) openStudySelector();
+  });
+}
+
+startUsageTracking();
+syncLayoutVisibility();
+renderProgress();
+installTouchSafeTapBridge();
+installClickShield();
+
+// Prevent mobile double-tap zoom on interactive controls
+function preventDoubleTapZoom(el) {
+  let lastTouchEnd = 0;
+  el.addEventListener('touchend', function (event) {
+    const now = (new Date()).getTime();
+    if (now - lastTouchEnd <= 300) event.preventDefault();
+    lastTouchEnd = now;
+  }, false);
+}
+
+['shuffleToggle','requiredToggle','directionToggle','spacedToggle','splitSelectionToggle','selfCheckToggle','aspectStepToggle','tenseStepToggle','voiceStepToggle','moodStepToggle','personStepToggle','numberStepToggle','caseStepToggle','genderStepToggle','optionalFormsToggle','optionalFilter_imperative_Toggle','optionalFilter_subjunctive_Toggle','optionalFilter_infinitive_Toggle','optionalFilter_participle_Toggle','optionalFilter_thirdPerson_Toggle','optionalFilter_futureTense_Toggle','optionalFilter_perfectTense_Toggle','unspacedDailyResetToggle','modeVocabBtn','modeMorphBtn','modeReaderBtn','modeShortcutVocabBtn','modeShortcutMorphBtn','modeShortcutReaderBtn','themeSystemBtn','themeDarkBtn','themeLightBtn'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) preventDoubleTapZoom(el);
+});
+
+if ('serviceWorker' in navigator) {
+  let pendingWorker = null;
+  let reloading = false;
+  // Only reload as the result of a user-initiated update. Auto-reloading on
+  // controllerchange at launch froze iOS standalone PWAs (the page renders
+  // but taps do nothing until a force-quit). The new worker now waits until
+  // the user taps "Refresh now", so the reload runs inside their gesture —
+  // which iOS handles reliably.
+  let refreshAccepted = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshAccepted || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  window.acceptRefreshAvailable = function () {
+    refreshAccepted = true;
+    if (pendingWorker) {
+      try { pendingWorker.postMessage({ type: 'SKIP_WAITING' }); } catch (_) {}
+    }
+    // Belt-and-suspenders: if the worker activating doesn't fire
+    // controllerchange shortly, reload anyway so the tap is never a no-op.
+    setTimeout(() => {
+      if (!reloading) { reloading = true; window.location.reload(); }
+    }, 1500);
+  };
+
+  function showRefreshOverlay(sw) {
+    pendingWorker = sw;
+    const overlay = document.getElementById('refreshAvailableOverlay');
+    if (!overlay) return;
+    // Visibility needs the `.show` class (see styles.css); aria-hidden alone
+    // won't display it. We show it right away: the worker is waiting and
+    // won't apply on its own this session, so there's no auto-reload to race.
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+  }
+
+  function trackUpdates(reg) {
+    // A waiting (or just-installed) worker while a controller already exists
+    // means a returning user has a new version ready. Surface the prompt;
+    // the worker stays waiting until they tap "Refresh now".
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      showRefreshOverlay(reg.waiting);
+    }
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+          showRefreshOverlay(sw);
+        }
+      });
+    });
+  }
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+      .then(reg => {
+        trackUpdates(reg);
+        try { reg.update(); } catch (_) {}
+        // Re-check whenever the tab regains focus, so a PWA reopened a day
+        // later picks up a deploy without needing a hard reload first.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState !== 'visible') return;
+          try { reg.update(); } catch (_) {}
+          // A worker can already be waiting from before this resume — the
+          // one-time check in trackUpdates only runs at initial registration,
+          // so reopening a backgrounded PWA would otherwise sit silently on the
+          // old version. Re-surface the "Update available" prompt here.
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            showRefreshOverlay(reg.waiting);
+          }
+        });
+      })
+      .catch(() => {});
+  });
+}
