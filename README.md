@@ -14,4 +14,4 @@ Run `npm test` and `npm run validate` before committing content. Bump `CACHE` in
 
 ## Source relationship
 
-This repository began as a copy of `hutima/duff_study_tool`. The Greek code and assets remain in the tree as a reference during conversion, but `index.html` loads only `app.js`, `app.css`, and Indonesian content. See `docs/superpowers/specs/2026-09-24-indonesian-literacy-design.md` and the stage-one plan for scope and next steps. Existing third-party source and font licenses should be reviewed before any broader redistribution of the unused Greek corpus.
+This repository includes an exact file copy of `hutima/duff_study_tool` as a reference during conversion. The Duff commit history remains in the original repository. The Greek code and assets remain in the tree, but `index.html` loads only `app.js`, `app.css`, and Indonesian content. See `docs/superpowers/specs/2026-09-24-indonesian-literacy-design.md` and the stage-one plan for scope and next steps. Existing third-party source and font licenses should be reviewed before any broader redistribution of the unused Greek corpus.

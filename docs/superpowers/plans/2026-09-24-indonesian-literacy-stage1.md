@@ -15,7 +15,7 @@
 - No runtime internet requirement, accounts, analytics, audio, speaking, or free-text grading.
 - All scored answers are curated multiple choice or self-rated vocabulary cards.
 - Stable item IDs; adding a new unit changes its content module and manifest only.
-- Preserve source attribution and existing repo history; publish work on `codex/indonesian-stage1` for review.
+- Preserve source attribution and an exact file copy of the Duff source; its commit history stays in the original repository. Publish work on `codex/indonesian-stage1` for review.
 
 ## Review Focus
 

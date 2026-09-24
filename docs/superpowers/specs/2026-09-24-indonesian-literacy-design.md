@@ -6,7 +6,7 @@ An offline study app for a heritage Indonesian listener who understands everyday
 
 ## Relationship to Duff
 
-The repository begins as a copy of `hutima/duff_study_tool`, preserving its git history and reference implementation. Stage 1 replaces the entry page with a small Indonesian app while retaining the reviewed pure SRS scheduler and utilities where useful. The Greek content and UI are historical source material, not loaded by the Indonesian entry page. A later cleanup may remove unused Greek assets after functional parity decisions have been made.
+The repository includes a complete file copy of `hutima/duff_study_tool` as a reference implementation. The GitHub connector copied files into the new repository but did not transfer Duff's commit history; the original repository remains the history source. Stage 1 replaces the entry page with a small Indonesian app. Greek content and UI remain as reference files and are not loaded by the Indonesian entry page. A later stage can adapt the pure SRS scheduler if spaced review is warranted and remove unused Greek assets after parity decisions have been made.
 
 ## Study flow
 
