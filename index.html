@@ -19,13 +19,13 @@
       <div class="study-controls">
         <button id="open-lessons" class="selector-trigger" type="button" aria-haspopup="dialog" aria-controls="lesson-dialog">Choose topics</button>
         <span id="selection-summary" class="selection-summary" aria-live="polite"></span>
+        <button type="button" id="shuffle-button" class="shuffle-trigger" aria-pressed="false">Shuffle: Off</button>
         <details id="settings-panel" class="settings-panel"><summary>Settings</summary>
           <div class="settings-content">
             <label class="theme-label" for="theme-select">Theme</label><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
             <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary options">
               <button type="button" id="spaced-toggle" aria-pressed="true">Spaced review: On</button>
               <button type="button" id="direction-toggle" aria-pressed="false">Indonesian → English</button>
-              <button type="button" id="shuffle-button">Shuffle</button>
             </div>
             <details class="data-tools"><summary>Your progress</summary>
               <p>Progress stays in this browser. Export a backup before clearing browser data.</p>

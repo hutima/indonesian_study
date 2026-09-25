@@ -1,6 +1,6 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab } from './progress.js';
-import { createDeck, reviewVocab, nextVocabRound } from './vocab-deck.js';
+import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
@@ -24,6 +24,7 @@ const vocabSectionSelect = document.querySelector('#vocab-section');
 const lessonVocabSectionSelect = document.querySelector('#lesson-vocab-section');
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
+const shuffleButton = document.querySelector('#shuffle-button');
 let progress = loadProgress(localStorage);
 let mode = 'vocabulary';
 let lessonIds;
@@ -36,6 +37,8 @@ let chosen = null;
 let translationShown = false;
 let spaced = true;
 let reverse = false;
+const SHUFFLE_KEY = 'indonesian-study-shuffle-v1';
+let shuffle = localStorage.getItem(SHUFFLE_KEY) === 'true';
 const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
 let deck;
@@ -218,7 +221,7 @@ function nextLabel(items) {
 
 const poolVocab = () => filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection);
 function startVocabDeck() {
-  deck = createDeck(poolVocab(), progress, spaced);
+  deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle);
   reviewHistory = [];
   revealed = false;
 }
@@ -273,7 +276,7 @@ function renderVocab() {
     panel.append(button('Next → Review remaining', 'primary', () => {
       reviewHistory.push({ progress, deck });
       if (reviewHistory.length > 40) reviewHistory.shift();
-      deck = nextVocabRound(deck);
+      deck = nextVocabRound(deck, shuffle);
       render();
     }));
     return;
@@ -376,6 +379,7 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
+  shuffleButton.hidden = mode !== 'vocabulary';
   vocabSectionWrap.hidden = mode !== 'vocabulary';
   wordList.hidden = !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
@@ -436,11 +440,14 @@ document.querySelector('#reset-button').addEventListener('click', () => {
 });
 spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.setAttribute('aria-pressed', String(spaced)); spacedButton.textContent = `Spaced review: ${spaced ? 'On' : 'Off'}`; startVocabDeck(); render(); });
 directionButton.addEventListener('click', () => { reverse = !reverse; directionButton.setAttribute('aria-pressed', String(reverse)); directionButton.textContent = reverse ? 'English → Indonesian' : 'Indonesian → English'; revealed = false; render(); });
-document.querySelector('#shuffle-button').addEventListener('click', () => {
+shuffleButton.addEventListener('click', () => {
+  shuffle = !shuffle;
+  localStorage.setItem(SHUFFLE_KEY, String(shuffle));
+  shuffleButton.setAttribute('aria-pressed', String(shuffle));
+  shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
   if (!deck) startVocabDeck();
-  const active = [...deck.active];
-  for (let i = active.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [active[i], active[j]] = [active[j], active[i]]; }
-  deck = { ...deck, active }; revealed = false; render();
+  reviewHistory = [];
+  deck = orderDeck(deck, poolVocab(), shuffle); revealed = false; render();
 });
 document.addEventListener('keydown', event => {
   if (mode !== 'vocabulary' || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -467,6 +474,8 @@ function applyTheme() {
 themeSelect.addEventListener('change', () => { theme = themeSelect.value; localStorage.setItem(THEME_KEY, theme); applyTheme(); });
 systemTheme.addEventListener?.('change', applyTheme);
 applyTheme();
+shuffleButton.setAttribute('aria-pressed', String(shuffle));
+shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
 renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); startVocabDeck(); renderProgress(); render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
