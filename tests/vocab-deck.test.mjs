@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDeck, markDeck, reviewVocab, nextVocabRound } from '../vocab-deck.js';
+import { createDeck, markDeck, reviewVocab, nextVocabRound, orderDeck } from '../vocab-deck.js';
 
 const cards = [{ id: 'a' }, { id: 'b' }];
 
@@ -52,4 +52,18 @@ test('unspaced Next is neutral and Uncertain returns for another pass', () => {
   assert.deepEqual(easy.deck.active, []);
   assert.deepEqual(easy.deck.middle, ['one']);
   assert.deepEqual(nextVocabRound(easy.deck).active, ['one']);
+});
+
+test('persistent Shuffle changes the active order and Off restores lesson order', () => {
+  const words = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const state = { version: 1, items: {} };
+  const shuffled = createDeck(words, state, false, 1_700_000_000_000, true, () => 0);
+  assert.deepEqual(shuffled.active, ['b', 'c', 'a']);
+  assert.deepEqual(orderDeck(shuffled, words, false).active, ['a', 'b', 'c']);
+  const afterOne = reviewVocab(shuffled, state, 'know', false);
+  const toggledOff = orderDeck(afterOne.deck, words, false);
+  assert.deepEqual(toggledOff.active, ['a', 'c']);
+  assert.equal(toggledOff.completed, 1);
+  const retry = { ...toggledOff, active: [], middle: ['a', 'c'] };
+  assert.deepEqual(nextVocabRound(retry, true, () => 0).active, ['c', 'a']);
 });

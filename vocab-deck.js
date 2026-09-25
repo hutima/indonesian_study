@@ -1,8 +1,24 @@
 import { dueVocab, recordVocabReview } from './progress.js';
 
-export function createDeck(cards, progress, spaced, now = Date.now()) {
+function shuffleIds(ids, random = Math.random) {
+  const result = [...ids];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+export function createDeck(cards, progress, spaced, now = Date.now(), shuffle = false, random = Math.random) {
   const selected = spaced ? dueVocab(cards, progress, now) : cards;
-  return { active: selected.map(card => card.id), middle: [], completed: 0, total: selected.length };
+  const ids = selected.map(card => card.id);
+  return { active: shuffle ? shuffleIds(ids, random) : ids, middle: [], completed: 0, total: selected.length };
+}
+
+export function orderDeck(deck, cards, shuffle, random = Math.random) {
+  const pending = new Set(deck.active);
+  const active = shuffle ? shuffleIds(deck.active, random) : cards.map(card => card.id).filter(id => pending.has(id));
+  return { ...deck, active };
 }
 
 export function markDeck(deck, rating, spaced = true) {
@@ -18,8 +34,8 @@ export function markDeck(deck, rating, spaced = true) {
   };
 }
 
-export function nextVocabRound(deck) {
-  return { ...deck, active: [...deck.middle], middle: [] };
+export function nextVocabRound(deck, shuffle = false, random = Math.random) {
+  return { ...deck, active: shuffle ? shuffleIds(deck.middle, random) : [...deck.middle], middle: [] };
 }
 
 export function reviewVocab(deck, progress, action, spaced, now = Date.now()) {
