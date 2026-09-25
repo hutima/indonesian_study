@@ -17,3 +17,9 @@ export function filterVocabSection(cards, section) {
 export function vocabSectionCounts(cards) {
   return Object.fromEntries(VOCAB_SECTIONS.map(([key]) => [key, filterVocabSection(cards, key).length]));
 }
+
+export function topicVocabularyPreview(unit, section) {
+  const focused = filterVocabSection(unit.vocabulary, section);
+  const added = unit.vocabulary.filter(card => card.id.startsWith('id-pbwl2-'));
+  return { focused, addedCount: added.length, sample: (section === 'all' && added.length ? added : focused).slice(0, 3) };
+}

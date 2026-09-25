@@ -3,7 +3,7 @@ import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVoca
 import { createDeck, markDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
-import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts } from './vocab-sections.js';
+import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
 
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
@@ -21,6 +21,7 @@ const analytics = document.querySelector('#vocab-analytics');
 const toolbar = document.querySelector('#vocab-toolbar');
 const vocabSectionWrap = document.querySelector('#vocab-section-wrap');
 const vocabSectionSelect = document.querySelector('#vocab-section');
+const lessonVocabSectionSelect = document.querySelector('#lesson-vocab-section');
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 let progress = loadProgress(localStorage);
@@ -137,12 +138,14 @@ function renderWordList() {
 }
 function renderVocabSectionSelector() {
   const counts = vocabSectionCounts(itemsForMode(UNITS, lessonIds, 'vocabulary'));
-  vocabSectionSelect.replaceChildren(...VOCAB_SECTIONS.map(([key, label]) => {
-    const option = node('option', '', `${label} · ${counts[key]}`);
-    option.value = key;
-    return option;
-  }));
-  vocabSectionSelect.value = vocabSection;
+  for (const select of [vocabSectionSelect, lessonVocabSectionSelect]) {
+    select.replaceChildren(...VOCAB_SECTIONS.map(([key, label]) => {
+      const option = node('option', '', `${label} · ${counts[key]}`);
+      option.value = key;
+      return option;
+    }));
+    select.value = vocabSection;
+  }
 }
 function describeSelection() {
   const units = selectedUnits(UNITS, lessonIds);
@@ -161,6 +164,8 @@ function renderLessonSelector() {
     for (const unit of units) {
       const selected = lessonIds.includes(unit.id);
       const name = unit.bookTopic ? `Topik ${unit.bookTopic}` : `Foundation ${unit.level}`;
+      const { focused, addedCount, sample } = topicVocabularyPreview(unit, vocabSection);
+      const wrapper = node('div', 'lesson-option');
       const tile = button('', 'lesson-tile' + (selected ? ' selected' : ''), () => {
         lessonIds = selected ? lessonIds.filter(id => id !== unit.id) : normalizeLessonIds([...lessonIds, unit.id], UNITS);
         saveLessonSelection();
@@ -168,8 +173,25 @@ function renderLessonSelector() {
       });
       tile.dataset.lessonId = unit.id;
       tile.setAttribute('aria-pressed', String(selected));
-      add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', `${unit.vocabulary.length} words · ${unit.morphology.length} forms`));
-      grid.append(tile);
+      add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', vocabSection === 'all' ? `${unit.vocabulary.length} words · ${addedCount} new PBWL · ${unit.morphology.length} forms` : `${focused.length} in this focus · ${unit.vocabulary.length} total words`));
+      if (sample.length) tile.append(node('span', 'lesson-word-preview', sample.map(card => card.form).join(' · ')));
+      wrapper.append(tile);
+      const details = node('details', 'lesson-words');
+      details.append(node('summary', '', `See ${focused.length} words`));
+      details.addEventListener('toggle', () => {
+        if (!details.open || details.querySelector('.lesson-words-content')) return;
+        const content = node('div', 'lesson-words-content');
+        for (const [section, label] of VOCAB_SECTIONS.slice(1)) {
+          if (vocabSection !== 'all' && vocabSection !== section) continue;
+          const cards = filterVocabSection(unit.vocabulary, section);
+          if (!cards.length) continue;
+          content.append(node('h4', '', `${label} · ${cards.length}`));
+          for (const card of cards) add(content, node('div', 'lesson-word-row', `${card.form} — ${card.meaning}`));
+        }
+        details.append(content);
+      });
+      wrapper.append(details);
+      grid.append(wrapper);
     }
   }
 }
@@ -348,11 +370,14 @@ document.querySelector('#select-all-topics').addEventListener('click', () => {
 });
 document.querySelector('#clear-lessons').addEventListener('click', () => { lessonIds = []; saveLessonSelection(); });
 wordList.addEventListener('toggle', () => { if (wordList.open) renderWordList(); });
-vocabSectionSelect.addEventListener('change', () => {
-  vocabSection = vocabSectionSelect.value;
+function chooseVocabSection(value) {
+  vocabSection = value;
   localStorage.setItem(VOCAB_SECTION_KEY, vocabSection);
+  renderVocabSectionSelector(); renderLessonSelector();
   startVocabDeck(); renderProgress(); render();
-});
+}
+vocabSectionSelect.addEventListener('change', () => chooseVocabSection(vocabSectionSelect.value));
+lessonVocabSectionSelect.addEventListener('change', () => chooseVocabSection(lessonVocabSectionSelect.value));
 document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('click', () => {
   mode = tab.dataset.mode;
   document.querySelectorAll('[data-mode]').forEach(other => { if (other === tab) other.setAttribute('aria-current', 'page'); else other.removeAttribute('aria-current'); });
