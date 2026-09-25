@@ -4,6 +4,7 @@ import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
+import { orderMorphology } from './morphology-order.js';
 
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
@@ -43,6 +44,7 @@ const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
 let deck;
 let reviewHistory = [];
+let morphOrder = null;
 
 const node = (tag, className, content) => {
   const element = document.createElement(tag);
@@ -55,7 +57,13 @@ const button = (label, className, action) => {
   const element = node('button', className, label);
   element.type = 'button'; element.addEventListener('click', action); return element;
 };
-const pool = () => itemsForMode(UNITS, lessonIds, mode);
+const pool = () => {
+  const items = itemsForMode(UNITS, lessonIds, mode);
+  if (mode !== 'morphology') return items;
+  if (!morphOrder) morphOrder = orderMorphology(items, null, -1, shuffle);
+  const byId = new Map(items.map(item => [item.id, item]));
+  return morphOrder.map(id => byId.get(id)).filter(Boolean);
+};
 const countLabel = (index, total) => `${index + 1} of ${total}`;
 
 function saveMark(id, result) {
@@ -203,6 +211,7 @@ function saveLessonSelection() {
   localStorage.setItem(SELECTION_KEY, JSON.stringify(lessonIds));
   renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector();
   itemIndex = 0; stepIndex = 0; chosen = null; translationShown = false;
+  morphOrder = null;
   startVocabDeck(); renderProgress(); render();
 }
 function nextItem() {
@@ -210,6 +219,7 @@ function nextItem() {
   if (itemIndex >= items.length - 1) {
     const nextId = nextLessonId(UNITS, lessonIds);
     if (nextId) { lessonIds = [nextId]; saveLessonSelection(); return; }
+    if (mode === 'morphology') morphOrder = null;
   }
   itemIndex = (itemIndex + 1) % items.length;
   stepIndex = 0; chosen = null; revealed = false; translationShown = false;
@@ -379,7 +389,7 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
-  shuffleButton.hidden = mode !== 'vocabulary';
+  shuffleButton.hidden = mode !== 'vocabulary' && mode !== 'morphology';
   vocabSectionWrap.hidden = mode !== 'vocabulary';
   wordList.hidden = !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
@@ -417,6 +427,7 @@ document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('cl
   mode = tab.dataset.mode;
   document.querySelectorAll('[data-mode]').forEach(other => { if (other === tab) other.setAttribute('aria-current', 'page'); else other.removeAttribute('aria-current'); });
   itemIndex = 0; stepIndex = 0; chosen = null; revealed = false; translationShown = false;
+  if (mode === 'morphology') morphOrder = null;
   renderGuide(); renderWordList(); render();
 }));
 document.querySelector('#export-button').addEventListener('click', () => {
@@ -445,9 +456,16 @@ shuffleButton.addEventListener('click', () => {
   localStorage.setItem(SHUFFLE_KEY, String(shuffle));
   shuffleButton.setAttribute('aria-pressed', String(shuffle));
   shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
-  if (!deck) startVocabDeck();
-  reviewHistory = [];
-  deck = orderDeck(deck, poolVocab(), shuffle); revealed = false; render();
+  if (mode === 'morphology') {
+    const items = itemsForMode(UNITS, lessonIds, 'morphology');
+    morphOrder = orderMorphology(items, morphOrder, itemIndex, shuffle);
+  } else {
+    if (!deck) startVocabDeck();
+    reviewHistory = [];
+    deck = orderDeck(deck, poolVocab(), shuffle);
+    revealed = false;
+  }
+  render();
 });
 document.addEventListener('keydown', event => {
   if (mode !== 'vocabulary' || event.altKey || event.ctrlKey || event.metaKey) return;
