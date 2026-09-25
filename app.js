@@ -5,6 +5,7 @@ import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
 import { orderMorphology } from './morphology-order.js';
+import { selectMorphologyFamilies, familyQuestions } from './content/morphology-families.js';
 
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
@@ -26,6 +27,7 @@ const lessonVocabSectionSelect = document.querySelector('#lesson-vocab-section')
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 const shuffleButton = document.querySelector('#shuffle-button');
+const morphDirectionButton = document.querySelector('#morph-direction-button');
 let progress = loadProgress(localStorage);
 let mode = 'vocabulary';
 let lessonIds;
@@ -38,6 +40,8 @@ let chosen = null;
 let translationShown = false;
 let spaced = true;
 let reverse = false;
+const MORPH_DIRECTION_KEY = 'indonesian-study-morph-direction-v1';
+let morphReverse = localStorage.getItem(MORPH_DIRECTION_KEY) === 'select';
 const SHUFFLE_KEY = 'indonesian-study-shuffle-v1';
 let shuffle = localStorage.getItem(SHUFFLE_KEY) === 'true';
 const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
@@ -58,10 +62,10 @@ const button = (label, className, action) => {
   element.type = 'button'; element.addEventListener('click', action); return element;
 };
 const pool = () => {
-  const items = itemsForMode(UNITS, lessonIds, mode);
-  if (mode !== 'morphology') return items;
-  if (!morphOrder) morphOrder = orderMorphology(items, null, -1, shuffle);
-  const byId = new Map(items.map(item => [item.id, item]));
+  if (mode !== 'morphology') return itemsForMode(UNITS, lessonIds, mode);
+  const families = selectMorphologyFamilies(lessonIds);
+  if (!morphOrder) morphOrder = orderMorphology(families, null, -1, shuffle);
+  const byId = new Map(families.map(item => [item.id, item]));
   return morphOrder.map(id => byId.get(id)).filter(Boolean);
 };
 const countLabel = (index, total) => `${index + 1} of ${total}`;
@@ -119,7 +123,9 @@ function head(label, count) {
 
 function renderGuide() {
   const units = selectedUnits(UNITS, lessonIds);
-  const focus = units.length === 1 ? (units[0].guide?.[mode] || (mode === 'grammar' && units[0].bookTopic ? `Choose the construction that fits the sentence and read why the other options change its meaning.` : null)) : null;
+  const focus = mode === 'morphology' && units.length === 1
+    ? `Compare forms of ${selectMorphologyFamilies(lessonIds).map(family => family.root).join(', ')}. Choose a form or explain an affix's effect; each choice comes from the same root.`
+    : units.length === 1 ? (units[0].guide?.[mode] || (mode === 'grammar' && units[0].bookTopic ? `Choose the construction that fits the sentence and read why the other options change its meaning.` : null)) : null;
   guide.hidden = !focus;
   guide.replaceChildren();
   if (focus) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', focus));
@@ -185,7 +191,8 @@ function renderLessonSelector() {
       });
       tile.dataset.lessonId = unit.id;
       tile.setAttribute('aria-pressed', String(selected));
-      add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', vocabSection === 'all' ? `${unit.vocabulary.length} words · ${addedCount} new PBWL · ${unit.morphology.length} forms` : `${focused.length} in this focus · ${unit.vocabulary.length} total words`));
+      const familyCount = selectMorphologyFamilies([unit.id]).length;
+      add(tile, node('strong', '', name), node('span', 'lesson-title', unit.title), node('small', '', vocabSection === 'all' ? `${unit.vocabulary.length} words · ${addedCount} new PBWL · ${familyCount} root ${familyCount === 1 ? 'family' : 'families'}` : `${focused.length} in this focus · ${unit.vocabulary.length} total words`));
       if (sample.length) tile.append(node('span', 'lesson-word-preview', sample.map(card => card.form).join(' · ')));
       wrapper.append(tile);
       const details = node('details', 'lesson-words');
@@ -226,7 +233,7 @@ function nextItem() {
   render();
 }
 function nextLabel(items) {
-  return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : mode === 'grammar' ? 'Next question' : 'Next form';
+  return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : mode === 'grammar' ? 'Next question' : mode === 'morphology' ? 'Next root family' : 'Next item';
 }
 
 const poolVocab = () => filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection);
@@ -346,22 +353,26 @@ function choices(question, progressId, next) {
 }
 
 function renderMorphology(item, items) {
-  head('MORPHOLOGY · ROOT + AFFIX', `${countLabel(itemIndex, items.length)} · step ${stepIndex + 1} of ${item.steps.length}`);
-  add(panel, node('div', 'word', item.form), node('div', 'context', item.context));
-  choices(item.steps[stepIndex], `${item.id}.s${stepIndex + 1}`, () => {
+  const questions = familyQuestions(item, morphReverse ? 'select' : 'understand');
+  const question = questions[stepIndex];
+  head(morphReverse ? 'MORPHOLOGY · SELECT A FORM' : 'MORPHOLOGY · AFFIX EFFECT', `${countLabel(itemIndex, items.length)} · question ${stepIndex + 1} of ${questions.length}`);
+  add(panel, node('span', 'family-label', 'ROOT FAMILY'), node('div', 'word', item.root));
+  panel.append(node('p', 'subtitle', morphReverse ? 'Select the Indonesian form that carries the English meaning.' : 'Choose what this form contributes. The other answers describe forms of the same root.'));
+  choices(question, question.id, () => {
     chosen = null;
-    if (stepIndex + 1 < item.steps.length) { stepIndex++; render(); }
-    else { stepIndex = item.steps.length; render(); }
+    stepIndex++;
+    render();
   });
+  if (chosen !== null) panel.append(node('p', 'affix-detail', `Affix: ${item.forms[stepIndex].affix} · ${item.forms[stepIndex].word} = ${item.forms[stepIndex].effect}`));
   panel.append(button(`Skip to ${nextLabel(items).toLowerCase()}`, 'skip-link', nextItem));
 }
 
 function renderMorphSummary(item, items) {
-  head('MORPHOLOGY · ANALYSIS', countLabel(itemIndex, items.length));
-  panel.append(node('h2', '', item.form));
-  const details = node('dl', 'analysis');
-  for (const [key, value] of [['Root', item.root], ['Affixes', item.affixes.length ? item.affixes.join(' + ') : 'none'], ['Affix effect / form', item.process], ['In context', item.meaning]]) {
-    add(details, node('dt', '', key), node('dd', '', value));
+  head('MORPHOLOGY · ROOT FAMILY', countLabel(itemIndex, items.length));
+  panel.append(node('h2', '', item.root));
+  const details = node('dl', 'family-analysis');
+  for (const form of item.forms) {
+    add(details, node('dt', '', form.word), node('dd', '', `${form.affix} · ${form.effect}`));
   }
   panel.append(details, button(nextLabel(items), 'primary', nextItem));
 }
@@ -389,6 +400,11 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
+  directionButton.setAttribute('aria-pressed', String(reverse));
+  directionButton.textContent = reverse ? 'English → Indonesian' : 'Indonesian → English';
+  morphDirectionButton.hidden = mode !== 'morphology';
+  morphDirectionButton.setAttribute('aria-pressed', String(morphReverse));
+  morphDirectionButton.textContent = morphReverse ? 'Mode: Select a form' : 'Mode: Explain affixes';
   shuffleButton.hidden = mode !== 'vocabulary' && mode !== 'morphology';
   vocabSectionWrap.hidden = mode !== 'vocabulary';
   wordList.hidden = !lessonIds.length;
@@ -399,7 +415,7 @@ function render() {
   itemIndex %= items.length;
   const item = items[itemIndex];
   if (mode === 'morphology') {
-    if (stepIndex >= item.steps.length) renderMorphSummary(item, items);
+    if (stepIndex >= item.forms.length) renderMorphSummary(item, items);
     else renderMorphology(item, items);
   } else if (mode === 'grammar') renderGrammar(item, items);
   else renderReading(item, items);
@@ -450,14 +466,24 @@ document.querySelector('#reset-button').addEventListener('click', () => {
   progress = normalizeProgress(null); saveProgress(localStorage, progress); startVocabDeck(); renderProgress(); render();
 });
 spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.setAttribute('aria-pressed', String(spaced)); spacedButton.textContent = `Spaced review: ${spaced ? 'On' : 'Off'}`; startVocabDeck(); render(); });
-directionButton.addEventListener('click', () => { reverse = !reverse; directionButton.setAttribute('aria-pressed', String(reverse)); directionButton.textContent = reverse ? 'English → Indonesian' : 'Indonesian → English'; revealed = false; render(); });
+directionButton.addEventListener('click', () => {
+  reverse = !reverse; revealed = false; render();
+});
+morphDirectionButton.addEventListener('click', () => {
+  morphReverse = !morphReverse;
+  localStorage.setItem(MORPH_DIRECTION_KEY, morphReverse ? 'select' : 'understand');
+  chosen = null;
+  const current = pool()[itemIndex];
+  if (current && stepIndex >= current.forms.length) stepIndex = 0;
+  renderGuide(); render();
+});
 shuffleButton.addEventListener('click', () => {
   shuffle = !shuffle;
   localStorage.setItem(SHUFFLE_KEY, String(shuffle));
   shuffleButton.setAttribute('aria-pressed', String(shuffle));
   shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
   if (mode === 'morphology') {
-    const items = itemsForMode(UNITS, lessonIds, 'morphology');
+    const items = selectMorphologyFamilies(lessonIds);
     morphOrder = orderMorphology(items, morphOrder, itemIndex, shuffle);
   } else {
     if (!deck) startVocabDeck();

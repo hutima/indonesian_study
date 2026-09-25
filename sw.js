@@ -1,9 +1,9 @@
 // Offline shell. The app supplies the content module URLs after registration.
-const CACHE = 'indonesian-study-v14';
+const CACHE = 'indonesian-study-v15';
 const SHELL = [
   './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './vocab-sections.js', './lesson-selection.js', './navigation.js', './morphology-order.js',
   './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',
-  './content/manifest.js', './manifest.json', './sw.js'
+  './content/manifest.js', './content/morphology-families.js', './manifest.json', './sw.js'
 ];
 self.addEventListener('install', event => {
   // Bypass the browser HTTP cache when populating a new version.
