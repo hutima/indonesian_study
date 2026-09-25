@@ -73,9 +73,9 @@ export function recordVocabReview(state, id, rating, spaced = true, now = Date.n
   if (!Object.hasOwn(next.items, id)) return next;
   const item = next.items[id];
   item.last = now;
-  if (!spaced) return next;
   const history = Array.isArray(item.confidenceHistory) ? item.confidenceHistory : [];
   item.confidenceHistory = [...history, { again: 0, unsure: .5, know: 1 }[rating]].slice(-10);
+  if (!spaced) return next;
   if (rating === 'again') {
     item.streak = 0; item.easyStreak = 0;
     item.srsStage = Math.max(0, getSrsStage(item) - 1);

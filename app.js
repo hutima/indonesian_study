@@ -1,6 +1,6 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
-import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab } from './progress.js';
-import { createDeck, markDeck } from './vocab-deck.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab } from './progress.js';
+import { createDeck, reviewVocab, nextVocabRound } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
@@ -39,6 +39,7 @@ let reverse = false;
 const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
 let deck;
+let reviewHistory = [];
 
 const node = (tag, className, content) => {
   const element = document.createElement(tag);
@@ -218,14 +219,32 @@ function nextLabel(items) {
 const poolVocab = () => filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection);
 function startVocabDeck() {
   deck = createDeck(poolVocab(), progress, spaced);
+  reviewHistory = [];
   revealed = false;
 }
-function markVocab(id, rating) {
-  progress = recordVocabReview(progress, id, rating, spaced);
+function markVocab(action) {
+  if (!deck?.active.length) return;
+  reviewHistory.push({ progress, deck });
+  if (reviewHistory.length > 40) reviewHistory.shift();
+  ({ progress, deck } = reviewVocab(deck, progress, action, spaced));
   saveProgress(localStorage, progress);
-  deck = markDeck(deck, spaced && rating === 'again' && progress.items[id].leechDrill ? 'unsure' : rating);
   revealed = false;
   renderProgress(); render();
+}
+function undoVocab() {
+  const previous = reviewHistory.pop();
+  if (!previous) return;
+  ({ progress, deck } = previous);
+  saveProgress(localStorage, progress);
+  revealed = false;
+  renderProgress(); render();
+}
+function reviewNavigation() {
+  const nav = node('div', 'actions review-nav');
+  if (reviewHistory.length) nav.append(button('↶ Undo', 'secondary', undoVocab));
+  if (deck.active.length) nav.append(button(spaced ? 'Again →' : 'Next →', 'secondary', () => markVocab('next')));
+  if (!spaced) nav.append(button('↻ Reset', 'secondary', () => { startVocabDeck(); render(); }));
+  return nav;
 }
 function metadata(item) {
   const meta = node('div', 'card-meta');
@@ -248,8 +267,20 @@ function renderVocab() {
   if (!items.length) { panel.append(node('p', 'empty', lessonIds.length ? 'No words in this section. Choose another vocabulary section.' : 'Select a textbook lesson or foundation set to begin.')); return; }
   if (!deck) startVocabDeck();
   head('VOCABULARY · FLIP CARDS', `${deck.completed} of ${deck.total} completed`);
+  if (!deck.active.length && !spaced && deck.middle.length) {
+    add(panel, node('h2', '', 'End of round'), node('p', 'subtitle', `${deck.middle.length} unconfirmed card${deck.middle.length === 1 ? '' : 's'} ready for another pass.`));
+    panel.append(reviewNavigation());
+    panel.append(button('Next → Review remaining', 'primary', () => {
+      reviewHistory.push({ progress, deck });
+      if (reviewHistory.length > 40) reviewHistory.shift();
+      deck = nextVocabRound(deck);
+      render();
+    }));
+    return;
+  }
   if (!deck.active.length) {
     add(panel, node('h2', '', spaced ? 'All caught up' : 'Deck complete'), node('p', 'subtitle', spaced ? 'No cards are due right now. Turn off spaced review to practice the full deck.' : 'You finished this practice deck. Start again to review.'));
+    panel.append(reviewNavigation());
     panel.append(button(spaced ? 'Check due cards' : 'Practice again', 'primary', () => { startVocabDeck(); render(); }));
     return;
   }
@@ -268,13 +299,13 @@ function renderVocab() {
   if (item.example) back.append(node('span', 'card-example', item.example));
   if (item.note) back.append(node('span', 'card-note', item.note));
   inner.append(front, back); card.append(inner); panel.append(card);
+  panel.append(reviewNavigation());
   const actions = node('div', 'actions review-actions');
-  for (const [label, rating, hint] of [['Again', 'again', '1'], ['Unsure', 'unsure', '2'], ['Next (Know)', 'know', '3']]) {
-    const action = button(`${label}  ${hint}`, rating === 'know' ? 'primary' : 'secondary', () => markVocab(item.id, rating));
-    actions.append(action);
+  for (const [label, rating, hint, style] of [['✗ Hard', 'again', '1', 'review-hard'], ['~ Uncertain', 'unsure', '2', 'review-uncertain'], ['✓ Easy', 'know', '3', 'review-easy']]) {
+    actions.append(button(`${label}  ${hint}`, style, () => markVocab(rating)));
   }
   panel.append(actions);
-  panel.append(node('p', 'review-hint', spaced ? 'Duff 8-month SRS · Again: requeue · Unsure: 2 hr · Know: from 22 hr' : 'Again returns later in this deck · Unsure and Know complete this round'));
+  panel.append(node('p', 'review-hint', spaced ? 'Hard requeues · Uncertain: 2 hr · Easy: from 22 hr · Again → rates Hard' : 'Hard and Uncertain return later · Easy clears the card · Next → does not score'));
 }
 
 function choices(question, progressId, next) {
@@ -412,13 +443,15 @@ document.querySelector('#shuffle-button').addEventListener('click', () => {
   deck = { ...deck, active }; revealed = false; render();
 });
 document.addEventListener('keydown', event => {
-  if (mode !== 'vocabulary' || !deck?.active.length || event.altKey || event.ctrlKey || event.metaKey) return;
-  if (event.target.closest('input, select, textarea, dialog')) return;
+  if (mode !== 'vocabulary' || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.target.closest('input, select, textarea, dialog, button, summary')) return;
+  if ((event.key === 'z' || event.key === 'Z') && reviewHistory.length) { event.preventDefault(); undoVocab(); return; }
+  if (!deck?.active.length) return;
   if (['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
-    event.preventDefault(); markVocab(deck.active[0], { Digit1: 'again', Digit2: 'unsure', Digit3: 'know' }[event.code]);
+    event.preventDefault(); markVocab({ Digit1: 'again', Digit2: 'unsure', Digit3: 'know' }[event.code]);
     return;
   }
-  if (event.target.closest('button, summary')) return;
+  if (event.code === 'ArrowRight' || event.key === 'n' || event.key === 'N') { event.preventDefault(); markVocab('next'); return; }
   if (event.code === 'Space' || event.code === 'Enter') { event.preventDefault(); flipCard(); }
 });
 const themeSelect = document.querySelector('#theme-select');
