@@ -14,7 +14,7 @@ The book's authentic media texts are denser than the original foundation lessons
 | 6 | Libur Nasional | Holidays; *ada/adalah* and passive di- |
 | 7 | Kereta Api: Sungguh Ajaib | Train complaint; agent-focused and patient-fronted passive clauses |
 | 8 | Puncak | Travel; consequence *sehingga* and purpose *agar/supaya* |
-| 9 | Kancil Datang | Wildlife; predicate nominalization with -nya and intransitive ber- |
+| 9 | Kancil Datang | Urban transport policy and a small vehicle; predicate nominalization with -nya and intransitive ber- |
 | 10 | Cap Go Me | Celebration; relative clauses with *yang* |
 | 11 | Babi Rusa | Wildlife; derived nouns, plus *sementara/sedangkan* in the book |
 | 12 | Orang Utan | Conservation; ke-…-an and reciprocal ber-…-an in the book |

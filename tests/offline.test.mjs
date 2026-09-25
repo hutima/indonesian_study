@@ -41,7 +41,7 @@ test('service worker caches the shell and every registered content unit for offl
   await prefetch;
   assert.equal(ready, true);
 
-  for (const path of ['./index.html', './app.js', './progress.js', './vocab-deck.js', './vocab-charts.js', './navigation.js', './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js', './content/manifest.js', ...UNIT_URLS]) {
+  for (const path of ['./index.html', './app.js', './progress.js', './vocab-deck.js', './vocab-charts.js', './vocab-sections.js', './navigation.js', './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js', './content/manifest.js', ...UNIT_URLS]) {
     let response;
     const request = { url: new URL(path, pagesBase).href, method: 'GET' };
     handlers.get('fetch')({ request, respondWith: promise => { response = promise; }, waitUntil: () => {} });
