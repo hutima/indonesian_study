@@ -97,8 +97,10 @@ function resolveDefinition(definition, index) {
   if (!canonical) {
     const matches = index.byForm.get(normalizeForm(definition.form)) || [];
     if (matches.length === 1) canonical = matches[0];
-    else if (matches.length > 1 && definition.preferredUnitId) {
-      canonical = matches.find(card => card.unitId === definition.preferredUnitId) || null;
+    else if (matches.length > 1) {
+      canonical = definition.preferredUnitId
+        ? matches.find(card => card.unitId === definition.preferredUnitId) || matches[0]
+        : matches[0];
     }
   }
   const card = canonical || fallbackCard(definition);
