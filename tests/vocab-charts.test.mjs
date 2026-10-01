@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dueBuckets, confidenceBuckets } from '../vocab-charts.js';
+import { dueBuckets, confidenceBuckets, proficiencyBands } from '../vocab-charts.js';
 
 test('histograms categorize unseen, due, future, and sampled confidence', () => {
   const now = new Date(2026, 8, 24, 12).getTime();
@@ -32,4 +32,29 @@ test('histograms keep recognition and production confidence separate', () => {
   assert.deepEqual(confidenceBuckets(cards, state, 'e2i'), [0, 1, 0, 0, 0, 0]);
   assert.equal(dueBuckets(cards, state, now, 'i2e')[0], 0);
   assert.equal(dueBuckets(cards, state, now, 'e2i')[0], 1);
+});
+
+
+test('proficiency bands are 100% of only the cards passed in', () => {
+  const state = {
+    version: 1,
+    items: {},
+    vocabDirections: {
+      i2e: {
+        a: { correct: 1, wrong: 0, confidenceHistory: [1] },
+        b: { correct: 1, wrong: 1, confidenceHistory: [.5] },
+        c: { correct: 0, wrong: 1, confidenceHistory: [0] },
+        outside: { correct: 1, wrong: 0, confidenceHistory: [1] }
+      },
+      e2i: {}
+    }
+  };
+  const selected = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const bands = proficiencyBands(selected, state, 'i2e');
+  assert.equal(bands.reduce((sum, band) => sum + band.count, 0), 4);
+  assert.equal(bands.reduce((sum, band) => sum + band.fraction, 0), 1);
+  assert.equal(bands.find(band => band.key === 'b80').count, 1);
+  assert.equal(bands.find(band => band.key === 'b40').count, 1);
+  assert.equal(bands.find(band => band.key === 'b0').count, 1);
+  assert.equal(bands.find(band => band.key === 'unseen').count, 1);
 });
