@@ -364,6 +364,7 @@ function renderCardStats(item) {
     addStat('Easy', stats.easy);
     addStat('Uncertain', stats.unsure);
     addStat('Hard', stats.hard);
+    if (stats.legacyUnclassified) addStat('Earlier reviews', stats.legacyUnclassified);
   } else {
     addStat('Easy / correct', stats.correct);
     addStat('Needs work', stats.wrong);
