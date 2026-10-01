@@ -25,3 +25,24 @@ export function confidenceBuckets(cards, state, direction = 'i2e') {
   }
   return counts;
 }
+
+
+const PROFICIENCY_BAND_DEFS = [
+  { key: 'b80', label: '80–100%', bucket: 5 },
+  { key: 'b60', label: '60–79%', bucket: 4 },
+  { key: 'b40', label: '40–59%', bucket: 3 },
+  { key: 'b20', label: '20–39%', bucket: 2 },
+  { key: 'b0', label: '0–19%', bucket: 1 },
+  { key: 'unseen', label: 'Unstarted', bucket: 0 }
+];
+
+export function proficiencyBands(cards, state, direction = 'i2e') {
+  const counts = confidenceBuckets(cards, state, direction);
+  const total = cards.length;
+  return PROFICIENCY_BAND_DEFS.map(def => ({
+    key: def.key,
+    label: def.label,
+    count: counts[def.bucket] || 0,
+    fraction: total ? (counts[def.bucket] || 0) / total : 0
+  }));
+}
