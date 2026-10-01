@@ -259,10 +259,11 @@ function renderProgress() {
   const deckLabel = vocabDeckMode === 'active' ? 'Struggling words'
     : vocabDeckMode === 'completed' ? 'Completed focus words'
     : 'Lesson vocabulary';
-  vocabProgressSummary.textContent = `${deckLabel} · ${reviewed.length} practiced · ${mastered} at 3+ streak · ${due} due`;
+  const directionLabel = direction === 'e2i' ? 'English → Indonesian' : 'Indonesian → English';
+  vocabProgressSummary.textContent = `${deckLabel} · ${directionLabel} · ${reviewed.length} practiced · ${mastered} at 3+ streak · ${due} due`;
   analytics.replaceChildren(
-    buildDueHistogram(cards, progress),
-    buildConfidenceHistogram(cards, progress)
+    buildDueHistogram(cards, progress, direction),
+    buildConfidenceHistogram(cards, progress, direction)
   );
 }
 
@@ -284,12 +285,13 @@ function histogram(title, counts, labels) {
   details.append(summary, bars);
   return details;
 }
-function buildDueHistogram(cards, state) {
+function buildDueHistogram(cards, state, direction) {
   const labels = ['now', 'today', ...Array.from({length:13}, (_, i) => `${i + 1}d`), '14d+'];
-  return histogram('Due by day', dueBuckets(cards, state), labels);
+  return histogram('Due by day', dueBuckets(cards, state, Date.now(), direction), labels);
 }
-function buildConfidenceHistogram(cards, state) {
-  return histogram('Recognition confidence', confidenceBuckets(cards, state), ['new', '0–19', '20–39', '40–59', '60–79', '80–100']);
+function buildConfidenceHistogram(cards, state, direction) {
+  const title = direction === 'e2i' ? 'Production confidence' : 'Recognition confidence';
+  return histogram(title, confidenceBuckets(cards, state, direction), ['new', '0–19', '20–39', '40–59', '60–79', '80–100']);
 }
 
 function head(label, count) {
