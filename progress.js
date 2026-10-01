@@ -26,7 +26,7 @@ export const STUDY_LEVELS = [
   { level: 15, threshold: 29000, title: 'Mahir', flavor: 'Belum tamat — bahasa memang tidak punya final boss.' }
 ];
 
-const DAY_RE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 function localDayKey(now = Date.now()) {
   const d = new Date(now);
   const pad = n => String(n).padStart(2, '0');
