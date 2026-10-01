@@ -19,7 +19,6 @@ actually exists here.
     section.workspace
       .study-controls
       nav.tabs
-      #game-status
       #vocab-deck-wrap
       #vocab-section-wrap
       #study-panel
@@ -27,6 +26,7 @@ actually exists here.
       .study-resources
   footer
   #lesson-dialog
+  #progress-dialog
   #update-dialog
   module script: app.js
 ```
@@ -41,6 +41,8 @@ actually exists here.
 ### `.study-controls`
 
 - `#open-lessons`: opens the lesson/topic selector.
+- `#open-progress`: opens the Duff-style Progress modal; gamification no
+  longer occupies permanent space in the study flow.
 - `#selection-summary`: compact description of the current lesson selection.
 - `#shuffle-button`: Vocabulary/Morphology shuffle toggle.
 - `#morph-direction-button`: Morphology direction toggle; hidden outside that
@@ -58,18 +60,6 @@ Four study modes, selected with buttons carrying `data-mode`:
 - `morphology`
 - `grammar`
 - `reading`
-
-### `#game-status`
-
-Always-visible lightweight gamification summary. `app.js` renders:
-
-- current XP level and Indonesian title;
-- progress to the next title;
-- current daily study streak (longest streak in the tooltip);
-- today's scored-review count.
-
-The underlying data is stored inside the existing progress JSON by
-`progress.js`; there is no separate account or analytics service.
 
 ### Vocabulary controls
 
@@ -98,11 +88,12 @@ the focus source metadata.
 
 ### `.study-resources`
 
-Collapsible "Lesson notes and progress" area containing:
+Collapsible **Lesson notes** area containing:
 
 - `#unit-description`
 - `#lesson-guide`
-- `#vocab-analytics` (deck-level due/confidence histograms)
+
+Progress analytics live in the dedicated modal instead of this in-flow panel.
 
 ## Lesson selector dialog
 
@@ -120,6 +111,28 @@ Collapsible "Lesson notes and progress" area containing:
 
 The personal focus deck is intentionally not maintained from this dialog; it is
 selected from `#vocab-deck` and edited in the repository data module.
+
+## Progress dialog
+
+`#progress-dialog` restores the compact Duff pattern: the main study surface
+has a single Progress button and analytics live in a modal.
+
+It contains:
+
+- `#progress-hero`: current level/title, XP progress, current and longest
+  streaks, today's review count, and total scored reviews;
+- `#achievement-grid` + `#achievement-count`: daily-use, review-milestone,
+  streak, and card-mastery achievements;
+- `#activity-grid`: the last 28 days of scored-review activity;
+- `#vocab-analytics`: due-by-day and recognition-confidence histograms for the
+  currently selected vocabulary deck;
+- `#title-ladder`: all Indonesian rank titles and XP thresholds.
+
+New rank and achievement events use a Duff-style temporary
+`.level-toast-host` celebration banner created dynamically by `app.js`.
+Celebration state is persisted with the gamification record so an Undo does not
+spam the same badge repeatedly; the daily badge can be earned again on a later
+day.
 
 ## Update dialog
 

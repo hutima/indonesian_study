@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats } from '../progress.js';
+import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getAchievements, syncGamificationCelebrations } from '../progress.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -105,4 +105,50 @@ test('legacy card history remains visible when new rating-specific stats begin',
   assert.equal(stats.seen, 7);
   assert.equal(stats.unsure, 1);
   assert.equal(stats.legacyUnclassified, 6);
+});
+
+
+test('achievements cover daily use, review milestones, streaks, and card mastery', () => {
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  let state = { version: 1, items: {} };
+  for (let n = 0; n < 10; n++) {
+    state = recordAnswer(state, `achievement-card-${n}`, 'correct', { now: day1 });
+  }
+  state = recordAnswer(state, 'achievement-card-next-day', 'correct', { now: day2 });
+  state.items['achievement-card-0'].streak = 3;
+  const earned = new Set(getAchievements(state, day2).filter(a => a.earned).map(a => a.id));
+  assert.ok(earned.has('daily_first_review'));
+  assert.ok(earned.has('first_review'));
+  assert.ok(earned.has('ten_reviews'));
+  assert.equal(earned.has('streak_3'), false);
+  assert.equal(earned.has('strong_10'), false);
+});
+
+test('celebration state baselines old progress then emits only newly earned badges and ranks', () => {
+  const now = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  let state = recordAnswer({ version: 1, items: {} }, 'card-1', 'correct', { now });
+  let sync = syncGamificationCelebrations(state, now);
+  state = sync.state;
+  assert.equal(sync.level, null);
+  assert.deepEqual(sync.achievements, []);
+
+  for (let n = 2; n <= 10; n++) state = recordAnswer(state, `card-${n}`, 'correct', { now });
+  sync = syncGamificationCelebrations(state, now);
+  assert.ok(sync.achievements.some(a => a.id === 'ten_reviews'));
+  assert.ok(sync.level && sync.level.level >= 2);
+
+  const repeat = syncGamificationCelebrations(sync.state, now);
+  assert.equal(repeat.level, null);
+  assert.deepEqual(repeat.achievements, []);
+});
+
+test('daily achievement can celebrate again on a new study day', () => {
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  let state = recordAnswer({ version: 1, items: {} }, 'card-a', 'correct', { now: day1 });
+  state = syncGamificationCelebrations(state, day1).state;
+  state = recordAnswer(state, 'card-b', 'correct', { now: day2 });
+  const sync = syncGamificationCelebrations(state, day2);
+  assert.ok(sync.achievements.some(a => a.id === 'daily_first_review'));
 });

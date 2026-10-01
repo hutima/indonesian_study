@@ -52,7 +52,13 @@ function normalizeGamification(value) {
     lastStudyDay: DAY_RE.test(value?.lastStudyDay || '') ? value.lastStudyDay : '',
     currentStreak: count(value?.currentStreak),
     longestStreak: count(value?.longestStreak),
-    dailyReviews
+    dailyReviews,
+    celebrationsInitialized: value?.celebrationsInitialized === true,
+    lastCelebratedLevel: count(value?.lastCelebratedLevel),
+    celebratedAchievementIds: Array.isArray(value?.celebratedAchievementIds)
+      ? [...new Set(value.celebratedAchievementIds.filter(id => typeof id === 'string' && /^[a-z0-9_-]{1,80}$/i.test(id)))]
+      : [],
+    lastCelebratedBadgeDay: DAY_RE.test(value?.lastCelebratedBadgeDay || '') ? value.lastCelebratedBadgeDay : ''
   };
 }
 function applyStudyCredit(state, xp, now = Date.now()) {
@@ -96,6 +102,68 @@ export function getGamificationSummary(state, now = Date.now()) {
     todayReviews: game.dailyReviews[today] || 0
   };
 }
+export function getAchievements(state, now = Date.now()) {
+  const game = getGamificationSummary(state, now);
+  const items = Object.values(state?.items || {});
+  const strongCards = items.filter(item => count(item.streak) >= 3).length;
+  const achievements = [];
+  const check = (id, icon, name, desc, earned, group = 'milestone') => {
+    achievements.push({ id, icon, name, desc, earned: !!earned, group });
+  };
+
+  check('daily_first_review', '★', 'First Review Today', 'Complete your first scored review today', game.todayReviews >= 1, 'daily');
+
+  check('first_review', '✦', 'Mulai!', 'Complete your first scored review', game.totalReviews >= 1);
+  check('ten_reviews', '★', 'Pemanasan', 'Complete 10 scored reviews', game.totalReviews >= 10);
+  check('fifty_reviews', '♢', 'Rajin', 'Complete 50 scored reviews', game.totalReviews >= 50);
+  check('hundred_reviews', '✶', 'Seratus', 'Complete 100 scored reviews', game.totalReviews >= 100);
+  check('twofifty_reviews', '❁', 'Tekun', 'Complete 250 scored reviews', game.totalReviews >= 250);
+  check('fivehundred_reviews', '❃', 'Setengah Ribu', 'Complete 500 scored reviews', game.totalReviews >= 500);
+  check('thousand_reviews', '✹', 'Seribu', 'Complete 1,000 scored reviews', game.totalReviews >= 1000);
+
+  check('streak_3', '♨', 'Tiga Hari', 'Reach a 3-day study streak', game.longestStreak >= 3, 'streak');
+  check('streak_7', '☄', 'Seminggu', 'Reach a 7-day study streak', game.longestStreak >= 7, 'streak');
+  check('streak_14', '⚝', 'Dua Minggu', 'Reach a 14-day study streak', game.longestStreak >= 14, 'streak');
+  check('streak_30', '☀', 'Sebulan', 'Reach a 30-day study streak', game.longestStreak >= 30, 'streak');
+  check('streak_60', '✺', 'Dua Bulan', 'Reach a 60-day study streak', game.longestStreak >= 60, 'streak');
+
+  check('strong_10', '◆', 'Mulai Melekat', 'Build a 3+ review streak on 10 cards', strongCards >= 10, 'mastery');
+  check('strong_50', '◇', 'Makin Melekat', 'Build a 3+ review streak on 50 cards', strongCards >= 50, 'mastery');
+  check('strong_100', '✧', 'Kosakata Kuat', 'Build a 3+ review streak on 100 cards', strongCards >= 100, 'mastery');
+
+  return achievements;
+}
+
+export function syncGamificationCelebrations(state, now = Date.now()) {
+  const next = normalizeProgress(state);
+  const game = next.gamification;
+  const summary = getGamificationSummary(next, now);
+  const achievements = getAchievements(next, now);
+  const today = localDayKey(now);
+
+  if (!game.celebrationsInitialized) {
+    game.celebrationsInitialized = true;
+    game.lastCelebratedLevel = summary.currentLevel.level;
+    game.celebratedAchievementIds = achievements.filter(a => a.earned).map(a => a.id);
+    game.lastCelebratedBadgeDay = today;
+    return { state: next, level: null, achievements: [] };
+  }
+
+  if (game.lastCelebratedBadgeDay && game.lastCelebratedBadgeDay !== today) {
+    game.celebratedAchievementIds = game.celebratedAchievementIds.filter(id => id !== 'daily_first_review');
+  }
+
+  const prior = new Set(game.celebratedAchievementIds);
+  const newlyEarned = achievements.filter(a => a.earned && !prior.has(a.id));
+  const level = summary.currentLevel.level > (game.lastCelebratedLevel || 1) ? summary.currentLevel : null;
+
+  if (level) game.lastCelebratedLevel = summary.currentLevel.level;
+  game.celebratedAchievementIds = achievements.filter(a => a.earned).map(a => a.id);
+  game.lastCelebratedBadgeDay = today;
+
+  return { state: next, level, achievements: newlyEarned };
+}
+
 export function getCardStats(state, id, now = Date.now()) {
   const item = state?.items?.[id];
   if (!item) return { seen: 0, easy: 0, unsure: 0, hard: 0, correct: 0, wrong: 0, streak: 0, confidencePct: null, dueAt: 0, last: 0, first: 0, legacyUnclassified: 0, hasRatingBreakdown: false };
