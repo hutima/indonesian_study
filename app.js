@@ -1,7 +1,7 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations, STUDY_LEVELS } from './progress.js';
 import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
-import { dueBuckets, confidenceBuckets, proficiencyBands } from './vocab-charts.js';
+import { dueBuckets, proficiencyBands } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
 import { orderMorphology } from './morphology-order.js';
@@ -254,7 +254,6 @@ function renderProgress() {
   const cards = poolVocab();
   const direction = currentVocabDirection();
   const reviewed = cards.filter(card => getVocabProgressEntry(progress, card.id, direction));
-  const mastered = reviewed.filter(card => (getVocabProgressEntry(progress, card.id, direction)?.streak || 0) >= 3).length;
   const due = dueVocab(cards, progress, Date.now(), direction).length;
   const deckLabel = vocabDeckMode === 'active' ? 'Struggling words'
     : vocabDeckMode === 'completed' ? 'Completed focus words'
@@ -329,10 +328,6 @@ function histogram(title, counts, labels) {
 function buildDueHistogram(cards, state, direction) {
   const labels = ['now', 'today', ...Array.from({length:13}, (_, i) => `${i + 1}d`), '14d+'];
   return histogram('Due by day', dueBuckets(cards, state, Date.now(), direction), labels);
-}
-function buildConfidenceHistogram(cards, state, direction) {
-  const title = direction === 'e2i' ? 'Production confidence' : 'Recognition confidence';
-  return histogram(title, confidenceBuckets(cards, state, direction), ['new', '0–19', '20–39', '40–59', '60–79', '80–100']);
 }
 
 function head(label, count) {
