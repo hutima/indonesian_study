@@ -61,3 +61,21 @@ short, high-level summary for users — **not** a per-commit or per-day log:
 - Bullets are **short and skimmable**: headline features only. Skip minor
   changes, bug fixes, and internal refactors.
 - Only the newest entry carries the `open` attribute.
+
+
+## Personal focus vocabulary
+
+- **Read `docs/curriculum/custom-vocabulary.md` before editing
+  `content/vocab/custom-focus.js`.** It is the authoritative maintenance
+  policy for the learner-specific struggling-word and completed decks.
+- Reuse an existing canonical vocabulary card/ID whenever the word already
+  exists in a normal lesson. Never make a second progress identity just because
+  the same word is also in the focus deck.
+- For a personal-only word, keep its `id-focus-...` ID permanently. If that
+  word is later added to a normal lesson, the lesson must reuse that same ID.
+- When rotating an active focus word out: if a normal lesson already contains
+  it, remove it from the active focus array only; if it exists nowhere else,
+  move the unchanged definition to `COMPLETED_STRUGGLE_WORDS` instead of
+  deleting it.
+- Do not auto-rotate words from SRS performance alone. Update the focus deck
+  from observed lesson/news difficulty or an explicit user request.
