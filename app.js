@@ -468,7 +468,14 @@ function markVocab(action) {
 function undoVocab() {
   const previous = reviewHistory.pop();
   if (!previous) return;
+  const celebrationState = {
+    celebrationsInitialized: progress.gamification?.celebrationsInitialized,
+    lastCelebratedLevel: progress.gamification?.lastCelebratedLevel,
+    celebratedAchievementIds: [...(progress.gamification?.celebratedAchievementIds || [])],
+    lastCelebratedBadgeDay: progress.gamification?.lastCelebratedBadgeDay
+  };
   ({ progress, deck } = previous);
+  progress.gamification = { ...progress.gamification, ...celebrationState };
   saveProgress(localStorage, progress);
   revealed = false;
   renderProgress(); render();
@@ -729,14 +736,14 @@ document.querySelector('#import-file').addEventListener('change', async event =>
   try {
     const imported = JSON.parse(await file.text());
     if (imported?.version !== 1 || !imported.items || typeof imported.items !== 'object' || Array.isArray(imported.items)) throw new Error('Invalid progress file');
-    progress = normalizeProgress(imported); saveProgress(localStorage, progress); startVocabDeck(); renderProgress(); render();
+    progress = normalizeProgress(imported); saveProgress(localStorage, progress); syncCelebrations(false); startVocabDeck(); renderProgress(); render();
     alert('Progress imported.');
   } catch { alert('Could not read this progress file.'); }
   event.target.value = '';
 });
 document.querySelector('#reset-button').addEventListener('click', () => {
   if (!confirm('Clear all Indonesian Study progress in this browser?')) return;
-  progress = normalizeProgress(null); saveProgress(localStorage, progress); startVocabDeck(); renderProgress(); render();
+  progress = normalizeProgress(null); saveProgress(localStorage, progress); syncCelebrations(false); startVocabDeck(); renderProgress(); render();
 });
 spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.setAttribute('aria-pressed', String(spaced)); spacedButton.textContent = `Spaced review: ${spaced ? 'On' : 'Off'}`; startVocabDeck(); render(); });
 directionButton.addEventListener('click', () => {
