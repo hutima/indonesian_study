@@ -104,8 +104,11 @@ export function getGamificationSummary(state, now = Date.now()) {
 }
 export function getAchievements(state, now = Date.now()) {
   const game = getGamificationSummary(state, now);
-  const items = Object.values(state?.items || {});
-  const strongCards = items.filter(item => count(item.streak) >= 3).length;
+  const i2e = state?.vocabDirections?.i2e || {};
+  const e2i = state?.vocabDirections?.e2i || {};
+  const directionalStrong = [...Object.values(i2e), ...Object.values(e2i)].filter(item => count(item.streak) >= 3).length;
+  const legacyStrong = Object.entries(state?.items || {}).filter(([id, item]) => !i2e[id] && count(item.streak) >= 3).length;
+  const strongCards = directionalStrong + legacyStrong;
   const achievements = [];
   const check = (id, icon, name, desc, earned, group = 'milestone') => {
     achievements.push({ id, icon, name, desc, earned: !!earned, group });
@@ -164,8 +167,56 @@ export function syncGamificationCelebrations(state, now = Date.now()) {
   return { state: next, level, achievements: newlyEarned };
 }
 
-export function getCardStats(state, id, now = Date.now()) {
-  const item = state?.items?.[id];
+const VOCAB_DIRECTIONS = new Set(['i2e', 'e2i']);
+function vocabDirection(direction) {
+  return VOCAB_DIRECTIONS.has(direction) ? direction : 'i2e';
+}
+function normalizeItem(value) {
+  if (!value || typeof value !== 'object') return null;
+  const item = {
+    correct: count(value.correct),
+    wrong: count(value.wrong),
+    last: timestamp(value.last),
+    first: timestamp(value.first),
+    again: count(value.again),
+    unsure: count(value.unsure),
+    know: count(value.know)
+  };
+  if (Object.hasOwn(value, 'dueAt')) item.dueAt = timestamp(value.dueAt);
+  for (const key of ['streak', 'easyStreak', 'srsStage', 'relearnLeft', 'lapseCount', 'leechStreak']) {
+    if (Object.hasOwn(value, key)) item[key] = count(value[key]);
+  }
+  for (const key of ['intervalDays', 'lastEasyIntervalDays', 'preLapseIntervalDays']) {
+    if (Object.hasOwn(value, key)) item[key] = days(value[key]);
+  }
+  if (Object.hasOwn(value, 'ease')) item.ease = Number.isFinite(value.ease) ? clamp(value.ease, 1.3, 3) : 2.3;
+  if (Array.isArray(value.confidenceHistory)) item.confidenceHistory = value.confidenceHistory.filter(n => Number.isFinite(n) && n >= 0 && n <= 1).slice(-10);
+  if (Object.hasOwn(value, 'inRelearn')) item.inRelearn = value.inRelearn === true;
+  if (Object.hasOwn(value, 'leechDrill')) item.leechDrill = value.leechDrill === true;
+  return item;
+}
+function normalizeItemStore(input) {
+  const store = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return store;
+  for (const [id, value] of Object.entries(input)) {
+    if (!safeId(id)) continue;
+    const item = normalizeItem(value);
+    if (item) store[id] = item;
+  }
+  return store;
+}
+export function getVocabProgressEntry(state, id, direction = 'i2e') {
+  const dir = vocabDirection(direction);
+  const directional = state?.vocabDirections?.[dir]?.[id];
+  if (directional) return directional;
+  // Progress created before directional tracking was introduced is treated as
+  // recognition history. It is intentionally NOT copied into English →
+  // Indonesian, where production starts with a clean history.
+  if (dir === 'i2e') return state?.items?.[id];
+  return undefined;
+}
+export function getCardStats(state, id, now = Date.now(), direction = 'i2e') {
+  const item = getVocabProgressEntry(state, id, direction);
   if (!item) return { seen: 0, easy: 0, unsure: 0, hard: 0, correct: 0, wrong: 0, streak: 0, confidencePct: null, dueAt: 0, last: 0, first: 0, legacyUnclassified: 0, hasRatingBreakdown: false };
   const hard = count(item.again), unsure = count(item.unsure), easy = count(item.know);
   const rated = hard + unsure + easy;
@@ -188,34 +239,15 @@ export function getCardStats(state, id, now = Date.now()) {
 }
 
 export function normalizeProgress(input) {
-  const items = {};
-  if (input && input.version === 1 && input.items && typeof input.items === 'object' && !Array.isArray(input.items)) {
-    for (const [id, value] of Object.entries(input.items)) {
-      if (!safeId(id) || !value || typeof value !== 'object') continue;
-      const item = {
-        correct: count(value.correct),
-        wrong: count(value.wrong),
-        last: timestamp(value.last),
-        first: timestamp(value.first),
-        again: count(value.again),
-        unsure: count(value.unsure),
-        know: count(value.know)
-      };
-      if (Object.hasOwn(value, 'dueAt')) item.dueAt = timestamp(value.dueAt);
-      for (const key of ['streak', 'easyStreak', 'srsStage', 'relearnLeft', 'lapseCount', 'leechStreak']) {
-        if (Object.hasOwn(value, key)) item[key] = count(value[key]);
-      }
-      for (const key of ['intervalDays', 'lastEasyIntervalDays', 'preLapseIntervalDays']) {
-        if (Object.hasOwn(value, key)) item[key] = days(value[key]);
-      }
-      if (Object.hasOwn(value, 'ease')) item.ease = Number.isFinite(value.ease) ? clamp(value.ease, 1.3, 3) : 2.3;
-      if (Array.isArray(value.confidenceHistory)) item.confidenceHistory = value.confidenceHistory.filter(n => Number.isFinite(n) && n >= 0 && n <= 1).slice(-10);
-      if (Object.hasOwn(value, 'inRelearn')) item.inRelearn = value.inRelearn === true;
-      if (Object.hasOwn(value, 'leechDrill')) item.leechDrill = value.leechDrill === true;
-      items[id] = item;
-    }
-  }
-  return { version: 1, items, gamification: normalizeGamification(input?.gamification) };
+  const items = input && input.version === 1 ? normalizeItemStore(input.items) : {};
+  const sourceDirections = input && input.version === 1 && input.vocabDirections && typeof input.vocabDirections === 'object'
+    ? input.vocabDirections
+    : {};
+  const vocabDirections = {
+    i2e: normalizeItemStore(sourceDirections.i2e),
+    e2i: normalizeItemStore(sourceDirections.e2i)
+  };
+  return { version: 1, items, vocabDirections, gamification: normalizeGamification(input?.gamification) };
 }
 
 export function loadProgress(storage) {
@@ -263,18 +295,21 @@ function grow(item, now) {
   item.lastEasyIntervalDays = interval;
   schedule(item, interval, now);
 }
-export function recordVocabReview(state, id, rating, spaced = true, now = Date.now()) {
+export function recordVocabReview(state, id, rating, spaced = true, now = Date.now(), direction = 'i2e') {
   if (!['again', 'unsure', 'know'].includes(rating)) return normalizeProgress(state);
-  const next = recordAnswer(state, id, rating === 'know' ? 'correct' : 'wrong', {
-    xp: rating === 'know' ? 8 : rating === 'unsure' ? 4 : 2,
-    now
-  });
-  if (!Object.hasOwn(next.items, id)) return next;
-  const item = next.items[id];
+  const next = normalizeProgress(state);
+  if (!safeId(id)) return next;
+  const dir = vocabDirection(direction);
+  const prior = getVocabProgressEntry(next, id, dir);
+  const item = prior ? { ...prior } : { correct: 0, wrong: 0, last: 0, first: 0, again: 0, unsure: 0, know: 0 };
+  item.first = item.first || now;
+  item[rating === 'know' ? 'correct' : 'wrong'] = Math.min(1000000, count(item[rating === 'know' ? 'correct' : 'wrong']) + 1);
   item[rating] = Math.min(1000000, count(item[rating]) + 1);
   item.last = now;
   const history = Array.isArray(item.confidenceHistory) ? item.confidenceHistory : [];
   item.confidenceHistory = [...history, { again: 0, unsure: .5, know: 1 }[rating]].slice(-10);
+  next.vocabDirections[dir][id] = item;
+  applyStudyCredit(next, rating === 'know' ? 8 : rating === 'unsure' ? 4 : 2, now);
   if (!spaced) return next;
   if (rating === 'again') {
     item.streak = 0; item.easyStreak = 0;
@@ -314,6 +349,9 @@ export function recordVocabReview(state, id, rating, spaced = true, now = Date.n
   } else grow(item, now);
   return next;
 }
-export function dueVocab(cards, state, now = Date.now()) {
-  return cards.filter(card => !state.items?.[card.id]?.dueAt || state.items[card.id].dueAt <= now);
+export function dueVocab(cards, state, now = Date.now(), direction = 'i2e') {
+  return cards.filter(card => {
+    const item = getVocabProgressEntry(state, card.id, direction);
+    return !item?.dueAt || item.dueAt <= now;
+  });
 }
