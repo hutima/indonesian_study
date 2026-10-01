@@ -1,11 +1,12 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
-import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab } from './progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats } from './progress.js';
 import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection, vocabSectionCounts, topicVocabularyPreview } from './vocab-sections.js';
 import { orderMorphology } from './morphology-order.js';
 import { selectMorphologyFamilies, familyQuestions } from './content/morphology-families.js';
+import { resolveCustomVocabulary, customVocabularyCounts } from './content/vocab/custom-focus.js';
 
 const panel = document.querySelector('#study-panel');
 const lessonGrid = document.querySelector('#lesson-grid');
@@ -24,6 +25,9 @@ const toolbar = document.querySelector('#vocab-toolbar');
 const vocabSectionWrap = document.querySelector('#vocab-section-wrap');
 const vocabSectionSelect = document.querySelector('#vocab-section');
 const lessonVocabSectionSelect = document.querySelector('#lesson-vocab-section');
+const vocabDeckSelect = document.querySelector('#vocab-deck');
+const vocabDeckWrap = document.querySelector('#vocab-deck-wrap');
+const gameStatus = document.querySelector('#game-status');
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 const shuffleButton = document.querySelector('#shuffle-button');
@@ -46,6 +50,8 @@ const SHUFFLE_KEY = 'indonesian-study-shuffle-v1';
 let shuffle = localStorage.getItem(SHUFFLE_KEY) === 'true';
 const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
+const VOCAB_DECK_KEY = 'indonesian-study-vocab-deck-v1';
+let vocabDeckMode = ['lesson', 'active', 'completed'].includes(localStorage.getItem(VOCAB_DECK_KEY)) ? localStorage.getItem(VOCAB_DECK_KEY) : 'lesson';
 let deck;
 let reviewHistory = [];
 let morphOrder = null;
@@ -76,14 +82,36 @@ function saveMark(id, result) {
   renderProgress();
 }
 
+function renderGamification() {
+  const game = getGamificationSummary(progress);
+  const level = game.currentLevel;
+  const next = game.nextLevel;
+  const bar = node('span', 'game-xp-bar');
+  const fill = node('span', 'game-xp-fill');
+  fill.style.width = `${Math.round(game.levelProgress * 100)}%`;
+  bar.append(fill);
+  const levelBlock = node('span', 'game-level');
+  add(levelBlock, node('strong', '', `Lv ${level.level} · ${level.title}`), node('small', '', level.flavor));
+  const xpBlock = node('span', 'game-xp');
+  add(xpBlock, bar, node('small', '', next ? `${game.xp} XP · ${next.threshold - game.xp} to ${next.title}` : `${game.xp} XP · max title`));
+  const streak = node('span', 'game-pill', `🔥 ${game.currentStreak} day${game.currentStreak === 1 ? '' : 's'}`);
+  streak.title = `Longest streak: ${game.longestStreak} day${game.longestStreak === 1 ? '' : 's'}`;
+  const today = node('span', 'game-pill', `Today · ${game.todayReviews} review${game.todayReviews === 1 ? '' : 's'}`);
+  gameStatus.replaceChildren(levelBlock, xpBlock, streak, today);
+}
+
 function renderProgress() {
+  renderGamification();
   const cards = poolVocab();
   const reviewed = cards.filter(card => progress.items[card.id]);
   const mastered = reviewed.filter(card => (progress.items[card.id].streak || 0) >= 3).length;
   const due = dueVocab(cards, progress).length;
+  const deckLabel = vocabDeckMode === 'active' ? 'Struggling words'
+    : vocabDeckMode === 'completed' ? 'Completed focus words'
+    : 'Vocabulary review';
   analytics.replaceChildren(
-    node('strong', '', 'Vocabulary review'),
-    node('span', '', `${reviewed.length} practiced · ${mastered} with 3+ Know reviews · ${due} due`),
+    node('strong', '', deckLabel),
+    node('span', '', `${reviewed.length} practiced · ${mastered} with 3+ Easy reviews · ${due} due`),
     buildDueHistogram(cards, progress),
     buildConfidenceHistogram(cards, progress)
   );
@@ -131,7 +159,27 @@ function renderGuide() {
   if (focus) add(guide, node('strong', '', 'LESSON FOCUS'), node('p', '', focus));
 }
 function renderWordList() {
-  wordList.hidden = !lessonIds.length;
+  if (mode === 'vocabulary' && vocabDeckMode !== 'lesson') {
+    const cards = poolVocab();
+    wordList.hidden = false;
+    const label = vocabDeckMode === 'active' ? 'Struggling words' : 'Completed focus words';
+    wordList.querySelector('summary').textContent = `${label} · ${cards.length} words`;
+    wordListContent.replaceChildren();
+    if (!wordList.open) return;
+    const group = node('section', 'word-list-group');
+    group.append(node('h3', '', label));
+    if (!cards.length) group.append(node('p', 'empty', 'No words in this deck yet.'));
+    for (const card of cards) {
+      const row = node('div', 'word-list-row');
+      add(row, node('strong', '', card.form), node('span', '', card.meaning));
+      row.append(node('small', '', [card.pos, card.register, card.focusSource].filter(Boolean).join(' · ')));
+      group.append(row);
+    }
+    wordListContent.append(group);
+    return;
+  }
+
+  wordList.hidden = mode === 'vocabulary' && vocabDeckMode !== 'lesson' ? false : !lessonIds.length;
   const cards = itemsForMode(UNITS, lessonIds, 'vocabulary');
   const supplemental = cards.filter(card => card.sourceRootId).length;
   wordList.querySelector('summary').textContent = `Vocabulary list · ${cards.length} words${supplemental ? ` (${supplemental} supplemental)` : ''}`;
@@ -154,6 +202,7 @@ function renderWordList() {
     wordListContent.append(group);
   }
 }
+
 function renderVocabSectionSelector() {
   const counts = vocabSectionCounts(itemsForMode(UNITS, lessonIds, 'vocabulary'));
   for (const select of [vocabSectionSelect, lessonVocabSectionSelect]) {
@@ -165,6 +214,22 @@ function renderVocabSectionSelector() {
     select.value = vocabSection;
   }
 }
+function renderVocabDeckSelector() {
+  const counts = customVocabularyCounts(UNITS);
+  const options = [
+    ['lesson', 'Lesson vocabulary'],
+    ['active', `Struggling words · ${counts.active}`],
+    ['completed', `Completed focus words · ${counts.completed}`]
+  ];
+  vocabDeckSelect.replaceChildren(...options.map(([key, label]) => {
+    const option = node('option', '', label);
+    option.value = key;
+    return option;
+  }));
+  vocabDeckSelect.value = vocabDeckMode;
+  vocabDeckWrap.hidden = mode !== 'vocabulary';
+}
+
 function describeSelection() {
   const units = selectedUnits(UNITS, lessonIds);
   const label = !units.length ? 'No lessons selected'
@@ -216,7 +281,7 @@ function renderLessonSelector() {
 }
 function saveLessonSelection() {
   localStorage.setItem(SELECTION_KEY, JSON.stringify(lessonIds));
-  renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector();
+  renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); renderVocabDeckSelector();
   itemIndex = 0; stepIndex = 0; chosen = null; translationShown = false;
   morphOrder = null;
   startVocabDeck(); renderProgress(); render();
@@ -236,7 +301,9 @@ function nextLabel(items) {
   return itemIndex === items.length - 1 && nextLessonId(UNITS, lessonIds) ? 'Next lesson' : mode === 'grammar' ? 'Next question' : mode === 'morphology' ? 'Next root family' : 'Next item';
 }
 
-const poolVocab = () => filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection);
+const poolVocab = () => vocabDeckMode === 'lesson'
+  ? filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection)
+  : resolveCustomVocabulary(UNITS, vocabDeckMode);
 function startVocabDeck() {
   deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle);
   reviewHistory = [];
@@ -273,6 +340,42 @@ function metadata(item) {
   }
   return meta;
 }
+function formatWhen(ts) {
+  if (!ts) return '—';
+  const delta = ts - Date.now();
+  const abs = Math.abs(delta);
+  if (abs < 60000) return delta > 0 ? 'in <1 min' : 'just now';
+  if (abs < 3600000) return delta > 0 ? `in ${Math.ceil(abs / 60000)} min` : `${Math.floor(abs / 60000)} min ago`;
+  if (abs < 86400000) return delta > 0 ? `in ${Math.ceil(abs / 3600000)} hr` : `${Math.floor(abs / 3600000)} hr ago`;
+  return delta > 0 ? `in ${Math.ceil(abs / 86400000)} days` : `${Math.floor(abs / 86400000)} days ago`;
+}
+function renderCardStats(item) {
+  const stats = getCardStats(progress, item.id);
+  const details = node('details', 'card-stats');
+  details.append(node('summary', '', stats.seen ? `Card stats · seen ${stats.seen}×` : 'Card stats · new'));
+  const grid = node('div', 'card-stats-grid');
+  const addStat = (label, value) => {
+    const box = node('span', 'card-stat');
+    add(box, node('strong', '', value), node('small', '', label));
+    grid.append(box);
+  };
+  addStat('Seen', stats.seen);
+  if (stats.hasRatingBreakdown) {
+    addStat('Easy', stats.easy);
+    addStat('Uncertain', stats.unsure);
+    addStat('Hard', stats.hard);
+  } else {
+    addStat('Easy / correct', stats.correct);
+    addStat('Needs work', stats.wrong);
+  }
+  addStat('Current streak', stats.streak);
+  addStat('Confidence', stats.confidencePct == null ? '—' : `${stats.confidencePct}%`);
+  addStat('Due', stats.dueAt ? formatWhen(stats.dueAt) : 'now');
+  if (stats.last) addStat('Last seen', formatWhen(stats.last));
+  details.append(grid);
+  return details;
+}
+
 function flipCard() {
   const card = document.querySelector('.flashcard');
   if (!card) return;
@@ -284,9 +387,15 @@ function flipCard() {
 }
 function renderVocab() {
   const items = poolVocab();
-  if (!items.length) { panel.append(node('p', 'empty', lessonIds.length ? 'No words in this section. Choose another vocabulary section.' : 'Select a textbook lesson or foundation set to begin.')); return; }
+  if (!items.length) {
+    const message = vocabDeckMode === 'completed' ? 'No retired focus words yet. Words moved out of the active focus deck will appear here when they are not already covered by another lesson.'
+      : vocabDeckMode === 'active' ? 'No active struggling words are configured.'
+      : lessonIds.length ? 'No words in this section. Choose another vocabulary section.' : 'Select a textbook lesson or foundation set to begin.';
+    panel.append(node('p', 'empty', message)); return;
+  }
   if (!deck) startVocabDeck();
-  head('VOCABULARY · FLIP CARDS', `${deck.completed} of ${deck.total} completed`);
+  const headLabel = vocabDeckMode === 'active' ? 'VOCABULARY · STRUGGLING WORDS' : vocabDeckMode === 'completed' ? 'VOCABULARY · COMPLETED FOCUS' : 'VOCABULARY · FLIP CARDS';
+  head(headLabel, `${deck.completed} of ${deck.total} completed`);
   if (!deck.active.length && !spaced && deck.middle.length) {
     add(panel, node('h2', '', 'End of round'), node('p', 'subtitle', `${deck.middle.length} unconfirmed card${deck.middle.length === 1 ? '' : 's'} ready for another pass.`));
     panel.append(reviewNavigation());
@@ -318,7 +427,9 @@ function renderVocab() {
   if (item.root) back.append(node('span', 'card-note', `Root: ${item.root}`));
   if (item.example) back.append(node('span', 'card-example', item.example));
   if (item.note) back.append(node('span', 'card-note', item.note));
-  inner.append(front, back); card.append(inner); panel.append(card);
+  if (item.focusSource) back.append(node('span', 'card-focus-source', `Focus source: ${item.focusSource}${item.focusCanonical ? ' · shared lesson card' : ' · personal-only card'}`));
+  if (item.focusNote && item.focusNote !== item.note) back.append(node('span', 'card-note', item.focusNote));
+  inner.append(front, back); card.append(inner); panel.append(card, renderCardStats(item));
   panel.append(reviewNavigation());
   const actions = node('div', 'actions review-actions');
   for (const [label, rating, hint, style] of [['✗ Hard', 'again', '1', 'review-hard'], ['~ Uncertain', 'unsure', '2', 'review-uncertain'], ['✓ Easy', 'know', '3', 'review-easy']]) {
@@ -406,7 +517,8 @@ function render() {
   morphDirectionButton.setAttribute('aria-pressed', String(morphReverse));
   morphDirectionButton.textContent = morphReverse ? 'Mode: Select a form' : 'Mode: Explain affixes';
   shuffleButton.hidden = mode !== 'vocabulary' && mode !== 'morphology';
-  vocabSectionWrap.hidden = mode !== 'vocabulary';
+  vocabDeckWrap.hidden = mode !== 'vocabulary';
+  vocabSectionWrap.hidden = mode !== 'vocabulary' || vocabDeckMode !== 'lesson';
   wordList.hidden = !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
@@ -438,6 +550,13 @@ function chooseVocabSection(value) {
   startVocabDeck(); renderProgress(); render();
 }
 vocabSectionSelect.addEventListener('change', () => chooseVocabSection(vocabSectionSelect.value));
+vocabDeckSelect.addEventListener('change', () => {
+  vocabDeckMode = vocabDeckSelect.value;
+  localStorage.setItem(VOCAB_DECK_KEY, vocabDeckMode);
+  itemIndex = 0; revealed = false;
+  renderVocabDeckSelector(); renderWordList();
+  startVocabDeck(); renderProgress(); render();
+});
 lessonVocabSectionSelect.addEventListener('change', () => chooseVocabSection(lessonVocabSectionSelect.value));
 document.querySelectorAll('[data-mode]').forEach(tab => tab.addEventListener('click', () => {
   mode = tab.dataset.mode;
@@ -520,7 +639,7 @@ systemTheme.addEventListener?.('change', applyTheme);
 applyTheme();
 shuffleButton.setAttribute('aria-pressed', String(shuffle));
 shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
-renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); startVocabDeck(); renderProgress(); render();
+renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); renderVocabDeckSelector(); startVocabDeck(); renderProgress(); render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const dialog = document.querySelector('#update-dialog');
