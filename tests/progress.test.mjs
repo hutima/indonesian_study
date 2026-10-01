@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations } from '../progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations } from '../progress.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
