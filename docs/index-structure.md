@@ -130,8 +130,9 @@ It contains:
 - `#achievement-grid` + `#achievement-count`: daily-use, review-milestone,
   streak, and card-mastery achievements;
 - `#activity-grid`: the last 28 days of scored-review activity;
-- `#vocab-analytics`: due-by-day and confidence histograms for the currently
-  selected vocabulary deck **and direction**;
+- `#vocab-analytics`: a 100% stacked proficiency bar plus due-by-day schedule
+  for only the currently selected vocabulary deck **and direction**. It does
+  not use course-wide vocabulary totals;
 - `#title-ladder`: all Indonesian rank titles and XP thresholds.
 
 New rank and achievement events use a Duff-style temporary
