@@ -44,3 +44,15 @@ button:focus-visible,select:focus-visible,summary:focus-visible,.flashcard:focus
 .shuffle-trigger{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;padding:10px 15px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:13px;font-weight:700}.shuffle-trigger[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--green)}.shuffle-trigger[hidden]{display:none!important}
 .settings-content{max-height:min(60dvh,480px);overflow-y:auto;overscroll-behavior:contain}
 @media(max-width:600px){.study-controls{position:relative;z-index:15}.settings-panel{position:static}.settings-content{left:0;right:0;top:calc(100% + 7px);width:auto}}
+
+
+/* Duff-inspired lightweight gamification and per-card review details. */
+.game-status{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(180px,1fr) auto auto;gap:10px;align-items:center;margin:14px 0 2px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--card);box-shadow:0 7px 20px var(--shadow)}
+.game-level{display:grid;gap:2px;min-width:0}.game-level strong{color:var(--green);font-size:13px}.game-level small,.game-xp small{color:var(--muted);font-size:10px;line-height:1.35}
+.game-xp{display:grid;gap:4px}.game-xp-bar{display:block;height:7px;border-radius:99px;background:var(--tint);overflow:hidden;border:1px solid var(--line)}.game-xp-fill{display:block;height:100%;background:var(--green);border-radius:inherit}
+.game-pill{white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:6px 9px;background:var(--tint);color:var(--ink);font-size:11px;font-weight:700}
+.card-stats{margin:12px auto 0;max-width:720px;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:8px 11px}.card-stats summary{cursor:pointer;color:var(--green);font-weight:700;font-size:11px}
+.card-stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:9px}.card-stat{display:grid;gap:1px;padding:7px 8px;border-radius:8px;background:var(--tint);min-width:0}.card-stat strong{font-size:13px;color:var(--ink);overflow-wrap:anywhere}.card-stat small{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.card-focus-source{font-size:11px;color:var(--green);font-weight:650}
+@media(max-width:720px){.game-status{grid-template-columns:1fr 1fr}.game-level{grid-column:1/-1}.card-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:460px){.game-status{grid-template-columns:1fr}.game-level{grid-column:auto}.game-pill{white-space:normal}}

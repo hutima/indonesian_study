@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab } from '../progress.js';
+import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats } from '../progress.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -24,7 +24,7 @@ test('malformed data falls back safely and does not pollute prototypes', () => {
 
 test('imported counters are normalized', () => {
   const storage = memoryStorage({ 'indonesian-study-progress-v1': JSON.stringify({ version: 1, items: { 'u01.v01': { correct: -3, wrong: 2.7, last: 'oops' } } }) });
-  assert.deepEqual(loadProgress(storage).items['u01.v01'], { correct: 0, wrong: 2, last: 0 });
+  assert.deepEqual(loadProgress(storage).items['u01.v01'], { correct: 0, wrong: 2, last: 0, first: 0, again: 0, unsure: 0, know: 0 });
 });
 
 test('an ID matching an inherited Object property records a finite mark', () => {
@@ -74,4 +74,35 @@ test('four hard lapses invoke Duff relaxed leech drill', () => {
   for (let n = 0; n < 4; n++) state = recordVocabReview(state, 'id-u02-voc-baca', 'again', true, 1_700_000_000_000 + n * 86400000);
   assert.equal(state.items['id-u02-voc-baca'].leechDrill, true);
   assert.equal(state.items['id-u02-voc-baca'].intervalDays, 1);
+});
+
+
+test('vocab reviews keep timestamps, rating breakdown, XP, and daily streaks', () => {
+  const id = 'id-u01-voc-rumah';
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  const day4 = new Date(2026, 0, 8, 12, 0, 0).getTime();
+  let state = recordVocabReview({ version: 1, items: {} }, id, 'again', true, day1);
+  state = recordVocabReview(state, id, 'know', true, day2);
+  const card = getCardStats(state, id, day2);
+  assert.equal(card.seen, 2);
+  assert.equal(card.hard, 1);
+  assert.equal(card.easy, 1);
+  assert.equal(card.last, day2);
+  assert.ok(state.items[id].dueAt > day2);
+  const game = getGamificationSummary(state, day2);
+  assert.equal(game.currentStreak, 2);
+  assert.equal(game.todayReviews, 1);
+  assert.equal(game.xp, 10);
+  assert.equal(getGamificationSummary(state, day4).currentStreak, 0);
+});
+
+test('legacy card history remains visible when new rating-specific stats begin', () => {
+  const id = 'id-u01-voc-buku';
+  const legacy = { version: 1, items: { [id]: { correct: 4, wrong: 2, last: 1_700_000_000_000 } } };
+  const state = recordVocabReview(legacy, id, 'unsure', false, 1_700_000_100_000);
+  const stats = getCardStats(state, id);
+  assert.equal(stats.seen, 7);
+  assert.equal(stats.unsure, 1);
+  assert.equal(stats.legacyUnclassified, 6);
 });

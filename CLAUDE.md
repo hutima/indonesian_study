@@ -18,46 +18,45 @@
 - Line numbers in the doc are approximate — don't chase a few lines of drift,
   but do refresh them when a section moves significantly.
 
-## Cache-bust
+## Offline releases and module changes
 
-Every asset URL in `index.html` ends in `?v=NNN`. The same number lives in
-`sw.js` (`CACHE_NAME` + precache list). Bump both together on release.
+This app does **not** use Duff's `?v=NNN` query-string cache-bust scheme.
+Runtime assets are bare relative URLs. Releases are refreshed by the service
+worker's cache name in `sw.js` (`indonesian-study-vNN`).
 
-### ⚠ ES-module imports are NOT cache-busted — don't break cross-version mixing
+When runtime code or content changes:
 
-The `?v=NNN` only stamps the `<script>`/`<link>` URLs in `index.html`. The
-relative `import ... from '../ui/foo.js'` specifiers **inside** the JS modules
-carry no `?v=`, so they're fetched bare. During a service-worker update the
-browser can momentarily pair a **new** `main.js?v=NNN` (from the network) with an
-**old cached** sibling module (the bare import resolves via `ignoreSearch`).
-If the new importer references an export the old module doesn't have yet, the
-module throws a `SyntaxError` at load → `main.js` never runs → the whole app
-freezes (no click handlers, and the update prompt — which lives in `main.js` —
-never shows). This is the Safari "frozen on update" failure mode; it would bite
-when `PARSING_SHUFFLE_ALL_VALUE` was added as a new `navigation.js` export and
-imported into `main.js`.
+- bump the service-worker cache name so installed copies receive a new shell;
+- if a new content module is added, register it in `UNIT_URLS` in
+  `content/manifest.js` and allow it in the worker's `CACHE_CONTENT` URL
+  validation;
+- if `app.js` imports the module directly and it must work offline on first
+  load, also include it in the worker's `SHELL` list;
+- keep the waiting-worker behavior intact: an installed update should not
+  replace the active worker until the user chooses Refresh now (or a later cold
+  start naturally activates it).
 
-Rules of thumb when changing module boundaries:
-- **Avoid importing a brand-new export across modules** if you can define the
-  value locally instead (e.g. a sentinel string constant — keep a mirrored copy
-  and a sync comment, as `PARSING_SHUFFLE_ALL_VALUE` now does in both
-  `navigation.js` and `main.js`).
-- **Never remove an export that an older shipped `main.js` still imports** —
-  keep it around (even if unused by the new code) so an old importer paired with
-  the new module doesn't `SyntaxError`.
-- Runtime wiring (deps objects passed to `configure*(...)`, `GLOBAL_CLICK_HANDLERS`
-  / `window` handler assignments) degrades to `undefined`, not a module-load
-  `SyntaxError`, so it's safe across versions — prefer it for new cross-module
-  hooks.
+### ES-module compatibility across installed versions
 
-## Changelog
+Relative ES-module imports are fetched as bare URLs, so avoid needless
+cross-version breakage. Prefer additive changes: do not remove an export that a
+recently shipped importer may still request, and avoid renaming runtime modules
+without a deliberate cache/version migration. The waiting service worker
+reduces mixed-version risk, but does not justify breaking old import contracts.
 
-The user guide's inline changelog (`#shortcutsOverlay` in `index.html`) is a
-short, high-level summary for users — **not** a per-commit or per-day log:
+## Personal focus vocabulary
 
-- Keep it to a handful (~1–5) of **major release notes**, grouped by theme/era,
-  newest first. Don't add a new entry per change or per day — fold edits into
-  the most relevant existing entry (and re-consolidate if it's growing too fine).
-- Bullets are **short and skimmable**: headline features only. Skip minor
-  changes, bug fixes, and internal refactors.
-- Only the newest entry carries the `open` attribute.
+- **Read `docs/curriculum/custom-vocabulary.md` before editing
+  `content/vocab/custom-focus.js`.** It is the authoritative maintenance
+  policy for the learner-specific struggling-word and completed decks.
+- Reuse an existing canonical vocabulary card/ID whenever the word already
+  exists in a normal lesson. Never make a second progress identity just because
+  the same word is also in the focus deck.
+- For a personal-only word, keep its `id-focus-...` ID permanently. If that
+  word is later added to a normal lesson, the lesson must reuse that same ID.
+- When rotating an active focus word out: if a normal lesson already contains
+  it, remove it from the active focus array only; if it exists nowhere else,
+  move the unchanged definition to `COMPLETED_STRUGGLE_WORDS` instead of
+  deleting it.
+- Do not auto-rotate words from SRS performance alone. Update the focus deck
+  from observed lesson/news difficulty or an explicit user request.

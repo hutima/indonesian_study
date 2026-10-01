@@ -31,6 +31,7 @@ export const UNIT_URLS = [
   './content/vocab/expanded-01-05.js',
   './content/vocab/expanded-06-10.js',
   './content/vocab/expanded-11-15.js',
+  './content/vocab/custom-focus.js',
   './content/units/unit01.js',
   './content/units/unit02.js',
   './content/units/unit03.js',

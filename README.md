@@ -6,6 +6,32 @@ An offline-first Indonesian literacy and word-formation study app, adapted from 
 
 Serve the directory with a static server, for example `python3 -m http.server 8000`, then open `http://localhost:8000`. The app works offline after it displays **Ready offline**. Tap a vocabulary card (or press Space/Enter) to flip it, then rate **Hard**, **Uncertain**, or **Easy** from either side (keys 1–3). **Undo** (Z) reverses the last review. **Again →** in spaced review scores Hard; **Next →** in unspaced practice moves a card to the retry pile without scoring it (Right Arrow or N). In unspaced practice, Hard and Uncertain return for another pass while Easy clears a card. Eight-month spaced review is on by default. It uses the Duff relaxed schedule: confidence-based interval growth (up to 60 days), in-session Hard requeue and relearning, a two-hour Uncertain review, and daily practice for repeatedly missed cards. Use the visible **Shuffle** switch in Vocabulary or Morphology to randomize upcoming cards or root families; turn it off to return remaining items to lesson order. The current root family stays in place until its questions are finished. In Morphology, use the visible mode button to switch between **Explain affixes** (Indonesian → English, choose an affix effect) and **Select a form** (English → Indonesian, choose among words from the same root). Open **Settings** to change spaced review, card direction, theme, or progress backups. Turn spaced review off for a full unspaced deck. Use **Vocabulary section** to focus the current deck on Lesson words, Affix families, Formal reading, or Everyday recognition; All words combines them. The selection is saved locally. Open **Vocabulary list** directly below the card in any study mode to browse selected words grouped by topic and section; PBWL additions are labeled Supplemental. Open **Lesson notes and progress** for review counts and collapsible due-by-day and confidence histograms. System, light, and dark color themes are available. With one lesson selected, morphology advances into the next lesson when the current lesson is exhausted. Card backs label part of speech, formal/informal/neutral register, and roots or affixed forms. Cards are curated for reading utility and are not a corpus-ranked frequency list. It stores progress in this browser's localStorage; Export JSON makes a portable backup.
 
+
+## Personal focus vocabulary and study game
+
+Vocabulary mode now has a **Vocabulary deck** selector in addition to the normal
+lesson/section filters. **Struggling words** is a curated deck of vocabulary
+that has caused difficulty in lessons, speaking/listening practice, or
+formal/news reading. If a focus word already exists in a normal lesson, the
+focus deck resolves to that exact card ID, so SRS history and per-card
+statistics remain longitudinal instead of splitting into duplicate records.
+**Completed focus words** is the archive for retired personal-only words that
+would otherwise disappear from every lesson deck.
+
+The study header borrows the lightweight game feedback from Duff Study Tool:
+scored work earns XP, XP unlocks Indonesian study titles, and the app tracks a
+daily study streak plus today's review count. Vocabulary cards have an
+expandable **Card stats** panel showing review count, Hard/Uncertain/Easy
+breakdown for new reviews, current streak, confidence, due time, and last-seen
+time. All of this stays inside the existing local progress JSON.
+
+See [custom vocabulary maintenance](docs/curriculum/custom-vocabulary.md) before
+adding, rotating, or promoting a focus word. The central rule is that card IDs
+are permanent: reuse the lesson card when one exists, and if a personal-only
+word later becomes a lesson word, the lesson must reuse its existing
+`id-focus-...` ID.
+
+
 ## GitHub Pages
 
 Configure Pages to publish from `main` at the repository root (`/`). The project URL is `https://hutima.github.io/indonesian_study/`. All runtime URLs are relative to that project path, including the service worker scope and the content modules. The root `.nojekyll` file keeps the static files unprocessed. On each release that changes the app or a content pack, bump the `CACHE` version in `sw.js` so installed copies refresh. Wait for **Ready offline** before disconnecting. When an update is installed, the app offers a Refresh now dialog and waits for that choice before activating the new version. Installations from the original Stage 1 worker may need one manual reload or closing all open app tabs: an already cached old app cannot display a modal added later. New worker versions refresh the full offline shell from the network before activation. Progress remains in localStorage.
