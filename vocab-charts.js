@@ -1,10 +1,10 @@
-import { dueVocab } from './progress.js';
+import { getVocabProgressEntry } from './progress.js';
 
-export function dueBuckets(cards, state, now = Date.now()) {
+export function dueBuckets(cards, state, now = Date.now(), direction = 'i2e') {
   const counts = new Array(16).fill(0); // now, today, 1–13 days, 14+
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   for (const card of cards) {
-    const due = state.items?.[card.id]?.dueAt || 0;
+    const due = getVocabProgressEntry(state, card.id, direction)?.dueAt || 0;
     if (!due || due <= now) { counts[0]++; continue; }
     const day = new Date(due); day.setHours(0, 0, 0, 0);
     const delta = Math.round((day - start) / 86400000);
@@ -12,10 +12,10 @@ export function dueBuckets(cards, state, now = Date.now()) {
   }
   return counts;
 }
-export function confidenceBuckets(cards, state) {
+export function confidenceBuckets(cards, state, direction = 'i2e') {
   const counts = new Array(6).fill(0); // unseen, 0–19, 20–39, 40–59, 60–79, 80–100
   for (const card of cards) {
-    const item = state.items?.[card.id];
+    const item = getVocabProgressEntry(state, card.id, direction);
     if (!item || !item.correct && !item.wrong) { counts[0]++; continue; }
     const history = item.confidenceHistory;
     const fraction = Array.isArray(history) && history.length
