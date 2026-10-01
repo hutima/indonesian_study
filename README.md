@@ -18,12 +18,18 @@ statistics remain longitudinal instead of splitting into duplicate records.
 **Completed focus words** is the archive for retired personal-only words that
 would otherwise disappear from every lesson deck.
 
-The study header borrows the lightweight game feedback from Duff Study Tool:
-scored work earns XP, XP unlocks Indonesian study titles, and the app tracks a
-daily study streak plus today's review count. Vocabulary cards have an
-expandable **Card stats** panel showing review count, Hard/Uncertain/Easy
-breakdown for new reviews, current streak, confidence, due time, and last-seen
-time. All of this stays inside the existing local progress JSON.
+The app also restores Duff Study Tool's compact **Progress** experience rather
+than keeping gamification permanently on the study screen. The Progress button
+opens a modal with XP, Indonesian rank titles, current/longest streaks, today's
+and lifetime review counts, a 28-day activity view, vocabulary due/confidence
+analytics, an achievement grid, and the full title ladder. Achievements include
+daily use, review milestones, study streaks, and card-mastery milestones. New
+achievements and rank-ups trigger short Duff-style celebration banners.
+
+Vocabulary cards still have an expandable **Card stats** panel showing review
+count, Hard/Uncertain/Easy breakdown for new reviews, current streak,
+confidence, due time, and last-seen time. All of this stays inside the existing
+local progress JSON.
 
 See [custom vocabulary maintenance](docs/curriculum/custom-vocabulary.md) before
 adding, rotating, or promoting a focus word. The central rule is that card IDs
