@@ -83,17 +83,22 @@ export function getGamificationSummary(state, now = Date.now()) {
   const levelProgress = nextLevel
     ? (game.xp - currentLevel.threshold) / (nextLevel.threshold - currentLevel.threshold)
     : 1;
+  const today = localDayKey(now);
+  const liveCurrentStreak = !game.lastStudyDay ? 0
+    : game.lastStudyDay === today || game.lastStudyDay === previousDayKey(today) ? game.currentStreak
+    : 0;
   return {
     ...game,
+    currentStreak: liveCurrentStreak,
     currentLevel,
     nextLevel,
     levelProgress: clamp(levelProgress, 0, 1),
-    todayReviews: game.dailyReviews[localDayKey(now)] || 0
+    todayReviews: game.dailyReviews[today] || 0
   };
 }
 export function getCardStats(state, id, now = Date.now()) {
   const item = state?.items?.[id];
-  if (!item) return { seen: 0, easy: 0, unsure: 0, hard: 0, correct: 0, wrong: 0, streak: 0, confidencePct: null, dueAt: 0, last: 0, first: 0, hasRatingBreakdown: false };
+  if (!item) return { seen: 0, easy: 0, unsure: 0, hard: 0, correct: 0, wrong: 0, streak: 0, confidencePct: null, dueAt: 0, last: 0, first: 0, legacyUnclassified: 0, hasRatingBreakdown: false };
   const hard = count(item.again), unsure = count(item.unsure), easy = count(item.know);
   const rated = hard + unsure + easy;
   const seen = Math.max(rated, count(item.correct) + count(item.wrong));
@@ -109,6 +114,7 @@ export function getCardStats(state, id, now = Date.now()) {
     dueAt: timestamp(item.dueAt),
     dueInMs: item.dueAt ? item.dueAt - now : null,
     last: timestamp(item.last), first: timestamp(item.first),
+    legacyUnclassified: Math.max(0, seen - rated),
     hasRatingBreakdown: rated > 0
   };
 }
