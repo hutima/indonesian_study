@@ -1,9 +1,9 @@
 // Offline shell. The app supplies the content module URLs after registration.
-const CACHE = 'indonesian-study-v15';
+const CACHE = 'indonesian-study-v16';
 const SHELL = [
   './', './index.html', './app.js', './app.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './vocab-sections.js', './lesson-selection.js', './navigation.js', './morphology-order.js',
   './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',
-  './content/manifest.js', './content/morphology-families.js', './manifest.json', './sw.js'
+  './content/manifest.js', './content/morphology-families.js', './content/vocab/custom-focus.js', './manifest.json', './sw.js'
 ];
 self.addEventListener('install', event => {
   // Bypass the browser HTTP cache when populating a new version.
@@ -19,7 +19,7 @@ self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') { event.waitUntil(self.skipWaiting()); return; }
   if (event.data?.type !== 'CACHE_CONTENT') return;
   const urls = event.data.urls;
-  const safe = Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && (/^\.\/content\/units\/[a-z0-9_-]+\.js$/.test(url) || /^\.\/content\/textbook\/topik[0-9]{2}\.js$/.test(url) || url === './content/vocab/pbwl-supplement.js' || /^\.\/content\/vocab\/expanded(?:-(?:01-05|06-10|11-15))?\.js$/.test(url)));
+  const safe = Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && (/^\.\/content\/units\/[a-z0-9_-]+\.js$/.test(url) || /^\.\/content\/textbook\/topik[0-9]{2}\.js$/.test(url) || url === './content/vocab/pbwl-supplement.js' || url === './content/vocab/custom-focus.js' || /^\.\/content\/vocab\/expanded(?:-(?:01-05|06-10|11-15))?\.js$/.test(url)));
   if (!safe) { event.ports[0]?.postMessage({ ready: false }); return; }
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))).then(() => {
     event.ports[0]?.postMessage({ ready: true });
