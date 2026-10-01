@@ -1,5 +1,5 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
-import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats, getAchievements, syncGamificationCelebrations, STUDY_LEVELS } from './progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations, STUDY_LEVELS } from './progress.js';
 import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
@@ -61,6 +61,7 @@ const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(VOCAB_SECTION_KEY)) ? localStorage.getItem(VOCAB_SECTION_KEY) : 'all';
 const VOCAB_DECK_KEY = 'indonesian-study-vocab-deck-v1';
 let vocabDeckMode = ['lesson', 'active', 'completed'].includes(localStorage.getItem(VOCAB_DECK_KEY)) ? localStorage.getItem(VOCAB_DECK_KEY) : 'lesson';
+const currentVocabDirection = () => reverse ? 'e2i' : 'i2e';
 let deck;
 let reviewHistory = [];
 let morphOrder = null;
@@ -251,9 +252,10 @@ function renderProgress() {
   renderTitleLadder(game);
 
   const cards = poolVocab();
-  const reviewed = cards.filter(card => progress.items[card.id]);
-  const mastered = reviewed.filter(card => (progress.items[card.id].streak || 0) >= 3).length;
-  const due = dueVocab(cards, progress).length;
+  const direction = currentVocabDirection();
+  const reviewed = cards.filter(card => getVocabProgressEntry(progress, card.id, direction));
+  const mastered = reviewed.filter(card => (getVocabProgressEntry(progress, card.id, direction)?.streak || 0) >= 3).length;
+  const due = dueVocab(cards, progress, Date.now(), direction).length;
   const deckLabel = vocabDeckMode === 'active' ? 'Struggling words'
     : vocabDeckMode === 'completed' ? 'Completed focus words'
     : 'Lesson vocabulary';
@@ -452,7 +454,7 @@ const poolVocab = () => vocabDeckMode === 'lesson'
   ? filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection)
   : resolveCustomVocabulary(UNITS, vocabDeckMode);
 function startVocabDeck() {
-  deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle);
+  deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle, Math.random, currentVocabDirection());
   reviewHistory = [];
   revealed = false;
 }
@@ -460,7 +462,7 @@ function markVocab(action) {
   if (!deck?.active.length) return;
   reviewHistory.push({ progress, deck });
   if (reviewHistory.length > 40) reviewHistory.shift();
-  ({ progress, deck } = reviewVocab(deck, progress, action, spaced));
+  ({ progress, deck } = reviewVocab(deck, progress, action, spaced, Date.now(), currentVocabDirection()));
   saveProgress(localStorage, progress);
   syncCelebrations();
   revealed = false;
@@ -505,9 +507,11 @@ function formatWhen(ts) {
   return delta > 0 ? `in ${Math.ceil(abs / 86400000)} days` : `${Math.floor(abs / 86400000)} days ago`;
 }
 function renderCardStats(item) {
-  const stats = getCardStats(progress, item.id);
+  const direction = currentVocabDirection();
+  const stats = getCardStats(progress, item.id, Date.now(), direction);
+  const directionLabel = direction === 'e2i' ? 'English → Indonesian' : 'Indonesian → English';
   const details = node('details', 'card-stats');
-  details.append(node('summary', '', stats.seen ? `Card stats · seen ${stats.seen}×` : 'Card stats · new'));
+  details.append(node('summary', '', stats.seen ? `${directionLabel} stats · seen ${stats.seen}×` : `${directionLabel} stats · new`));
   const grid = node('div', 'card-stats-grid');
   const addStat = (label, value) => {
     const box = node('span', 'card-stat');
@@ -752,7 +756,8 @@ spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.se
 directionButton.addEventListener('click', () => {
   reverse = !reverse;
   localStorage.setItem(VOCAB_DIRECTION_KEY, reverse ? 'e2i' : 'i2e');
-  revealed = false;
+  startVocabDeck();
+  renderProgress();
   render();
 });
 morphDirectionButton.addEventListener('click', () => {
