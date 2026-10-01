@@ -1,5 +1,5 @@
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
-import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats } from './progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats, getAchievements, syncGamificationCelebrations, STUDY_LEVELS } from './progress.js';
 import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
 import { dueBuckets, confidenceBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, selectedUnits, itemsForMode, nextLessonId } from './lesson-selection.js';
@@ -27,7 +27,15 @@ const vocabSectionSelect = document.querySelector('#vocab-section');
 const lessonVocabSectionSelect = document.querySelector('#lesson-vocab-section');
 const vocabDeckSelect = document.querySelector('#vocab-deck');
 const vocabDeckWrap = document.querySelector('#vocab-deck-wrap');
-const gameStatus = document.querySelector('#game-status');
+const progressDialog = document.querySelector('#progress-dialog');
+const openProgress = document.querySelector('#open-progress');
+const progressHero = document.querySelector('#progress-hero');
+const achievementGrid = document.querySelector('#achievement-grid');
+const achievementCount = document.querySelector('#achievement-count');
+const activityGrid = document.querySelector('#activity-grid');
+const activitySummary = document.querySelector('#activity-summary');
+const vocabProgressSummary = document.querySelector('#vocab-progress-summary');
+const titleLadder = document.querySelector('#title-ladder');
 const spacedButton = document.querySelector('#spaced-toggle');
 const directionButton = document.querySelector('#direction-toggle');
 const shuffleButton = document.querySelector('#shuffle-button');
@@ -79,39 +87,177 @@ const countLabel = (index, total) => `${index + 1} of ${total}`;
 function saveMark(id, result) {
   progress = recordAnswer(progress, id, result);
   saveProgress(localStorage, progress);
+  syncCelebrations();
   renderProgress();
 }
 
-function renderGamification() {
+let toastQueue = [];
+let toastActive = false;
+let toastTimer = null;
+
+function showNextToast() {
+  if (toastActive || !toastQueue.length) return;
+  const toast = toastQueue.shift();
+  let host = document.querySelector('#level-toast-host');
+  if (!host) {
+    host = node('div', 'level-toast-host');
+    host.id = 'level-toast-host';
+    document.body.append(host);
+  }
+  const notice = button('', `level-toast${toast.kind === 'achievement' ? ' level-toast-achievement' : ''}`, dismissToast);
+  notice.setAttribute('aria-label', 'Dismiss notification');
+  const badge = node('span', 'level-toast-badge');
+  if (toast.kind === 'achievement') {
+    add(badge, node('span', 'toast-achievement-icon', toast.icon || '★'), node('span', '', 'Badge'));
+  } else badge.textContent = `Lv. ${toast.level}`;
+  const copy = node('span', 'level-toast-copy');
+  add(copy, node('span', 'level-toast-title', toast.title), node('span', 'level-toast-sub', toast.sub));
+  add(notice, badge, copy, node('span', 'level-toast-close', '×'));
+  host.replaceChildren(notice);
+  toastActive = true;
+  requestAnimationFrame(() => host.classList.add('show'));
+  toastTimer = setTimeout(dismissToast, 2400);
+}
+function dismissToast() {
+  const host = document.querySelector('#level-toast-host');
+  if (!host || !toastActive) return;
+  host.classList.remove('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    host.replaceChildren();
+    toastActive = false;
+    toastTimer = null;
+    showNextToast();
+  }, 220);
+}
+function queueCelebrations(result) {
+  if (result.level) {
+    toastQueue.push({
+      kind: 'level', level: result.level.level,
+      title: `New rank — ${result.level.title}`,
+      sub: `${result.level.flavor} · ${getGamificationSummary(progress).xp.toLocaleString()} XP · Tap to dismiss`
+    });
+  }
+  for (const achievement of result.achievements) {
+    toastQueue.push({
+      kind: 'achievement', icon: achievement.icon,
+      title: `Achievement — ${achievement.name}`,
+      sub: `${achievement.desc} · Tap to dismiss`
+    });
+  }
+  showNextToast();
+}
+function syncCelebrations(show = true) {
+  const result = syncGamificationCelebrations(progress);
+  progress = result.state;
+  saveProgress(localStorage, progress);
+  if (show) queueCelebrations(result);
+}
+function metric(label, value) {
+  const el = node('div', 'progress-metric');
+  add(el, node('strong', '', value), node('small', '', label));
+  return el;
+}
+function dateKey(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function renderActivity(game) {
+  activityGrid.replaceChildren();
+  const days = [];
+  let activeDays = 0;
+  let reviews = 0;
+  for (let offset = 27; offset >= 0; offset--) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const count = game.dailyReviews[dateKey(date)] || 0;
+    if (count) activeDays++;
+    reviews += count;
+    days.push({ date, count });
+  }
+  const max = Math.max(1, ...days.map(day => day.count));
+  for (const day of days) {
+    const cell = node('span', 'activity-day');
+    const ratio = day.count / max;
+    cell.dataset.level = day.count === 0 ? '0' : ratio <= .25 ? '1' : ratio <= .5 ? '2' : ratio <= .75 ? '3' : '4';
+    cell.title = `${day.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${day.count} scored review${day.count === 1 ? '' : 's'}`;
+    activityGrid.append(cell);
+  }
+  activitySummary.textContent = `${activeDays} active day${activeDays === 1 ? '' : 's'} · ${reviews} reviews in the last 28 days`;
+}
+function renderAchievements() {
+  const achievements = getAchievements(progress);
+  const earned = achievements.filter(item => item.earned).length;
+  achievementCount.textContent = `${earned} / ${achievements.length} earned`;
+  achievementGrid.replaceChildren();
+  const groups = [
+    ['daily', 'Today'],
+    ['milestone', 'Review milestones'],
+    ['streak', 'Study streaks'],
+    ['mastery', 'Card mastery']
+  ];
+  for (const [key, label] of groups) {
+    const items = achievements.filter(item => item.group === key);
+    if (!items.length) continue;
+    achievementGrid.append(node('div', 'achievement-group-label', label));
+    for (const item of items) {
+      const badge = node('div', `achievement-badge ${item.earned ? 'earned' : 'locked'}`);
+      badge.title = item.desc;
+      const copy = node('div', 'achievement-copy');
+      add(copy, node('strong', '', item.name), node('small', '', item.desc));
+      add(badge, node('span', 'achievement-icon', item.earned ? item.icon : '·'), copy);
+      achievementGrid.append(badge);
+    }
+  }
+}
+function renderTitleLadder(game) {
+  titleLadder.replaceChildren();
+  for (const level of STUDY_LEVELS) {
+    const unlocked = game.xp >= level.threshold;
+    const current = game.currentLevel.level === level.level;
+    const row = node('div', `title-row${current ? ' current' : ''}${unlocked ? '' : ' locked'}`);
+    const info = node('div');
+    add(info, node('strong', '', level.title), node('small', '', level.flavor));
+    add(row, node('strong', '', `Lv. ${level.level}`), info, node('span', 'title-xp', `${level.threshold.toLocaleString()} XP`));
+    titleLadder.append(row);
+  }
+}
+function renderProgress() {
   const game = getGamificationSummary(progress);
-  const level = game.currentLevel;
-  const next = game.nextLevel;
+  progressHero.replaceChildren();
+
+  const hero = node('div', 'progress-hero-main');
+  const rank = node('div', 'progress-rank');
+  add(rank, node('strong', '', `Lv. ${game.currentLevel.level} · ${game.currentLevel.title}`));
   const bar = node('span', 'game-xp-bar');
   const fill = node('span', 'game-xp-fill');
   fill.style.width = `${Math.round(game.levelProgress * 100)}%`;
   bar.append(fill);
-  const levelBlock = node('span', 'game-level');
-  add(levelBlock, node('strong', '', `Lv ${level.level} · ${level.title}`), node('small', '', level.flavor));
-  const xpBlock = node('span', 'game-xp');
-  add(xpBlock, bar, node('small', '', next ? `${game.xp} XP · ${next.threshold - game.xp} to ${next.title}` : `${game.xp} XP · max title`));
-  const streak = node('span', 'game-pill', `🔥 ${game.currentStreak} day${game.currentStreak === 1 ? '' : 's'}`);
-  streak.title = `Longest streak: ${game.longestStreak} day${game.longestStreak === 1 ? '' : 's'}`;
-  const today = node('span', 'game-pill', `Today · ${game.todayReviews} review${game.todayReviews === 1 ? '' : 's'}`);
-  gameStatus.replaceChildren(levelBlock, xpBlock, streak, today);
-}
+  const xp = node('span', 'game-xp');
+  add(xp, bar, node('small', '', game.nextLevel ? `${game.xp.toLocaleString()} XP · ${(game.nextLevel.threshold - game.xp).toLocaleString()} to ${game.nextLevel.title}` : `${game.xp.toLocaleString()} XP · highest title reached`));
+  add(hero, rank, node('div', 'progress-level-flavor', game.currentLevel.flavor), xp);
+  progressHero.append(
+    hero,
+    metric('Current streak', `${game.currentStreak} day${game.currentStreak === 1 ? '' : 's'}`),
+    metric('Longest streak', `${game.longestStreak} day${game.longestStreak === 1 ? '' : 's'}`),
+    metric('Today', game.todayReviews.toLocaleString()),
+    metric('Total reviews', game.totalReviews.toLocaleString())
+  );
 
-function renderProgress() {
-  renderGamification();
+  renderAchievements();
+  renderActivity(game);
+  renderTitleLadder(game);
+
   const cards = poolVocab();
   const reviewed = cards.filter(card => progress.items[card.id]);
   const mastered = reviewed.filter(card => (progress.items[card.id].streak || 0) >= 3).length;
   const due = dueVocab(cards, progress).length;
   const deckLabel = vocabDeckMode === 'active' ? 'Struggling words'
     : vocabDeckMode === 'completed' ? 'Completed focus words'
-    : 'Vocabulary review';
+    : 'Lesson vocabulary';
+  vocabProgressSummary.textContent = `${deckLabel} · ${reviewed.length} practiced · ${mastered} at 3+ streak · ${due} due`;
   analytics.replaceChildren(
-    node('strong', '', deckLabel),
-    node('span', '', `${reviewed.length} practiced · ${mastered} with a 3+ review streak · ${due} due`),
     buildDueHistogram(cards, progress),
     buildConfidenceHistogram(cards, progress)
   );
@@ -315,6 +461,7 @@ function markVocab(action) {
   if (reviewHistory.length > 40) reviewHistory.shift();
   ({ progress, deck } = reviewVocab(deck, progress, action, spaced));
   saveProgress(localStorage, progress);
+  syncCelebrations();
   revealed = false;
   renderProgress(); render();
 }
@@ -521,7 +668,6 @@ function render() {
   vocabDeckWrap.hidden = mode !== 'vocabulary';
   vocabSectionWrap.hidden = mode !== 'vocabulary' || vocabDeckMode !== 'lesson';
   wordList.hidden = mode === 'vocabulary' && vocabDeckMode !== 'lesson' ? false : !lessonIds.length;
-  analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
   const items = pool();
   if (!items.length) { panel.append(node('p', 'empty', 'No exercises in this selection yet.')); return; }
@@ -534,6 +680,13 @@ function render() {
   else renderReading(item, items);
 }
 
+openProgress.addEventListener('click', () => { renderProgress(); progressDialog.showModal(); });
+progressDialog.addEventListener('close', () => openProgress.focus());
+document.querySelector('#close-progress').addEventListener('click', () => progressDialog.close());
+document.querySelector('#close-progress-footer').addEventListener('click', () => progressDialog.close());
+progressDialog.addEventListener('click', event => {
+  if (event.target === progressDialog) progressDialog.close();
+});
 openLessons.addEventListener('click', () => lessonDialog.showModal());
 lessonDialog.addEventListener('close', () => openLessons.focus());
 document.querySelector('#close-lessons').addEventListener('click', () => lessonDialog.close());
@@ -640,7 +793,7 @@ systemTheme.addEventListener?.('change', applyTheme);
 applyTheme();
 shuffleButton.setAttribute('aria-pressed', String(shuffle));
 shuffleButton.textContent = `Shuffle: ${shuffle ? 'On' : 'Off'}`;
-renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); renderVocabDeckSelector(); startVocabDeck(); renderProgress(); render();
+renderLessonSelector(); describeSelection(); renderGuide(); renderWordList(); renderVocabSectionSelector(); renderVocabDeckSelector(); startVocabDeck(); syncCelebrations(false); renderProgress(); render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const dialog = document.querySelector('#update-dialog');
