@@ -111,7 +111,7 @@ function renderProgress() {
     : 'Vocabulary review';
   analytics.replaceChildren(
     node('strong', '', deckLabel),
-    node('span', '', `${reviewed.length} practiced · ${mastered} with 3+ Easy reviews · ${due} due`),
+    node('span', '', `${reviewed.length} practiced · ${mastered} with a 3+ review streak · ${due} due`),
     buildDueHistogram(cards, progress),
     buildConfidenceHistogram(cards, progress)
   );
@@ -519,7 +519,7 @@ function render() {
   shuffleButton.hidden = mode !== 'vocabulary' && mode !== 'morphology';
   vocabDeckWrap.hidden = mode !== 'vocabulary';
   vocabSectionWrap.hidden = mode !== 'vocabulary' || vocabDeckMode !== 'lesson';
-  wordList.hidden = !lessonIds.length;
+  wordList.hidden = mode === 'vocabulary' && vocabDeckMode !== 'lesson' ? false : !lessonIds.length;
   analytics.hidden = mode !== 'vocabulary';
   if (mode === 'vocabulary') { renderVocab(); return; }
   const items = pool();
