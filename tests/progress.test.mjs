@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getAchievements, syncGamificationCelebrations } from '../progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations } from '../progress.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -35,7 +35,7 @@ test('an ID matching an inherited Object property records a finite mark', () => 
 test('spaced Know defers a vocab card, then it becomes due again', () => {
   const now = 1_700_000_000_000;
   const state = recordVocabReview({ version: 1, items: {} }, 'id-u01-voc-buku', 'know', true, now);
-  assert.equal(state.items['id-u01-voc-buku'].correct, 1);
+  assert.equal(getVocabProgressEntry(state, 'id-u01-voc-buku', 'i2e').correct, 1);
   assert.deepEqual(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 1000), []);
   assert.equal(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 24 * 60 * 60 * 1000).length, 1);
 });
@@ -46,8 +46,8 @@ test('spaced Again makes the card due soon; Unsure uses a shorter delay than Kno
   const second = recordVocabReview(first, 'id-u02-voc-baca', 'know', true, now + 24 * 60 * 60 * 1000);
   const unsure = recordVocabReview(second, 'id-u02-voc-baca', 'unsure', true, now + 2 * 24 * 60 * 60 * 1000);
   const again = recordVocabReview(second, 'id-u02-voc-baca', 'again', true, now + 2 * 24 * 60 * 60 * 1000);
-  assert.ok(again.items['id-u02-voc-baca'].dueAt < unsure.items['id-u02-voc-baca'].dueAt);
-  assert.ok(unsure.items['id-u02-voc-baca'].dueAt < second.items['id-u02-voc-baca'].dueAt + 7 * 24 * 60 * 60 * 1000);
+  assert.ok(getVocabProgressEntry(again, 'id-u02-voc-baca', 'i2e').dueAt < getVocabProgressEntry(unsure, 'id-u02-voc-baca', 'i2e').dueAt);
+  assert.ok(getVocabProgressEntry(unsure, 'id-u02-voc-baca', 'i2e').dueAt < getVocabProgressEntry(second, 'id-u02-voc-baca', 'i2e').dueAt + 7 * 24 * 60 * 60 * 1000);
 });
 
 test('eight-month Duff cadence stabilizes before growth and retains relearn state across saves', () => {
@@ -57,23 +57,23 @@ test('eight-month Duff cadence stabilizes before growth and retains relearn stat
   const start = 1_700_000_000_000;
   for (let n = 0; n < 5; n++) {
     state = recordVocabReview(state, id, 'know', true, start + n * 86400000);
-    if (n < 4) assert.equal(state.items[id].intervalDays, 1);
+    if (n < 4) assert.equal(getVocabProgressEntry(state, id, 'i2e').intervalDays, 1);
   }
-  assert.equal(state.items[id].intervalDays, 2);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').intervalDays, 2);
   saveProgress(storage, state);
   state = recordVocabReview(loadProgress(storage), id, 'again', true, start + 6 * 86400000);
-  assert.equal(state.items[id].inRelearn, true);
-  assert.equal(state.items[id].relearnLeft, 2);
-  assert.equal(state.items[id].dueAt, start + 6 * 86400000 + 300000);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').inRelearn, true);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').relearnLeft, 2);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').dueAt, start + 6 * 86400000 + 300000);
   const uncertain = recordVocabReview(loadProgress(storage), id, 'unsure', true, start + 6 * 86400000);
-  assert.equal(uncertain.items[id].dueAt, start + 6 * 86400000 + 7200000);
+  assert.equal(getVocabProgressEntry(uncertain, id, 'i2e').dueAt, start + 6 * 86400000 + 7200000);
 });
 
 test('four hard lapses invoke Duff relaxed leech drill', () => {
   let state = { version: 1, items: {} };
   for (let n = 0; n < 4; n++) state = recordVocabReview(state, 'id-u02-voc-baca', 'again', true, 1_700_000_000_000 + n * 86400000);
-  assert.equal(state.items['id-u02-voc-baca'].leechDrill, true);
-  assert.equal(state.items['id-u02-voc-baca'].intervalDays, 1);
+  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').leechDrill, true);
+  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').intervalDays, 1);
 });
 
 
@@ -89,7 +89,7 @@ test('vocab reviews keep timestamps, rating breakdown, XP, and daily streaks', (
   assert.equal(card.hard, 1);
   assert.equal(card.easy, 1);
   assert.equal(card.last, day2);
-  assert.ok(state.items[id].dueAt > day2);
+  assert.ok(getVocabProgressEntry(state, id, 'i2e').dueAt > day2);
   const game = getGamificationSummary(state, day2);
   assert.equal(game.currentStreak, 2);
   assert.equal(game.todayReviews, 1);
@@ -151,4 +151,43 @@ test('daily achievement can celebrate again on a new study day', () => {
   state = recordAnswer(state, 'card-b', 'correct', { now: day2 });
   const sync = syncGamificationCelebrations(state, day2);
   assert.ok(sync.achievements.some(a => a.id === 'daily_first_review'));
+});
+
+
+test('vocabulary recognition and production keep independent histories and schedules', () => {
+  const id = 'id-u03-voc-ternyata';
+  const now = 1_800_000_000_000;
+  let state = recordVocabReview({ version: 1, items: {} }, id, 'know', true, now, 'i2e');
+
+  const recognition = getCardStats(state, id, now, 'i2e');
+  const productionBefore = getCardStats(state, id, now, 'e2i');
+  assert.equal(recognition.easy, 1);
+  assert.equal(recognition.seen, 1);
+  assert.equal(productionBefore.seen, 0);
+  assert.equal(dueVocab([{ id }], state, now + 1000, 'i2e').length, 0);
+  assert.equal(dueVocab([{ id }], state, now + 1000, 'e2i').length, 1);
+
+  state = recordVocabReview(state, id, 'again', true, now + 2000, 'e2i');
+  const recognitionAfter = getCardStats(state, id, now + 2000, 'i2e');
+  const productionAfter = getCardStats(state, id, now + 2000, 'e2i');
+  assert.equal(recognitionAfter.easy, 1);
+  assert.equal(recognitionAfter.hard, 0);
+  assert.equal(productionAfter.easy, 0);
+  assert.equal(productionAfter.hard, 1);
+  assert.notEqual(recognitionAfter.dueAt, productionAfter.dueAt);
+});
+
+test('legacy blended vocab history migrates only to Indonesian-to-English fallback', () => {
+  const id = 'id-u04-voc-ongkos';
+  const legacy = {
+    version: 1,
+    items: {
+      [id]: { correct: 3, wrong: 1, know: 3, again: 1, last: 1_700_000_000_000, dueAt: 1_900_000_000_000 }
+    }
+  };
+  const state = normalizeProgress(legacy);
+  assert.equal(getCardStats(state, id, 1_800_000_000_000, 'i2e').seen, 4);
+  assert.equal(getCardStats(state, id, 1_800_000_000_000, 'e2i').seen, 0);
+  assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'i2e').length, 0);
+  assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'e2i').length, 1);
 });

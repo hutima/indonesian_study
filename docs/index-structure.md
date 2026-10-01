@@ -45,6 +45,8 @@ actually exists here.
 - `#direction-toggle`: first-class vocabulary direction control. It stays
   outside Settings because English → Indonesian is active-production practice,
   not merely an alternate display direction. The preference persists locally.
+  The two directions share a canonical word/card ID but have independent SRS
+  entries, confidence histories, review streaks, and due dates.
 - `#open-progress`: opens the Duff-style Progress modal; gamification no
   longer occupies permanent space in the study flow.
 - `#selection-summary`: compact description of the current lesson selection.
@@ -128,8 +130,8 @@ It contains:
 - `#achievement-grid` + `#achievement-count`: daily-use, review-milestone,
   streak, and card-mastery achievements;
 - `#activity-grid`: the last 28 days of scored-review activity;
-- `#vocab-analytics`: due-by-day and recognition-confidence histograms for the
-  currently selected vocabulary deck;
+- `#vocab-analytics`: due-by-day and confidence histograms for the currently
+  selected vocabulary deck **and direction**;
 - `#title-ladder`: all Indonesian rank titles and XP thresholds.
 
 New rank and achievement events use a Duff-style temporary
@@ -137,6 +139,11 @@ New rank and achievement events use a Duff-style temporary
 Celebration state is persisted with the gamification record so an Undo does not
 spam the same badge repeatedly; the daily badge can be earned again on a later
 day.
+
+Vocabulary review progress is stored directionally under
+`vocabDirections.i2e` and `vocabDirections.e2i`. Older blended vocabulary
+entries in `items` are used only as an Indonesian → English fallback until
+that card is reviewed again; they are never copied into production history.
 
 ## Update dialog
 

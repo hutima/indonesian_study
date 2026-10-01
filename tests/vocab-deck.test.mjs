@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDeck, markDeck, reviewVocab, nextVocabRound, orderDeck } from '../vocab-deck.js';
+import { getVocabProgressEntry } from '../progress.js';
 
 const cards = [{ id: 'a' }, { id: 'b' }];
 
@@ -25,12 +26,12 @@ test('Duff review keeps Next separate from Easy scoring', () => {
   const state = { version: 1, items: {} };
   const start = createDeck(cards, state, true);
   const next = reviewVocab(start, state, 'next', true, 1_700_000_000_000);
-  assert.equal(next.progress.items.one.correct, 0);
-  assert.equal(next.progress.items.one.wrong, 1);
-  assert.equal(next.progress.items.one.confidenceHistory[0], 0);
+  assert.equal(getVocabProgressEntry(next.progress, 'one', 'i2e').correct, 0);
+  assert.equal(getVocabProgressEntry(next.progress, 'one', 'i2e').wrong, 1);
+  assert.equal(getVocabProgressEntry(next.progress, 'one', 'i2e').confidenceHistory[0], 0);
   assert.equal(next.deck.active[0], 'two');
   const easy = reviewVocab(start, state, 'know', true, 1_700_000_000_000);
-  assert.equal(easy.progress.items.one.correct, 1);
+  assert.equal(getVocabProgressEntry(easy.progress, 'one', 'i2e').correct, 1);
   assert.equal(easy.deck.completed, 1);
   assert.deepEqual(state, { version: 1, items: {} });
   assert.deepEqual(start.active, ['one', 'two']); // Undo can restore these snapshots.
@@ -45,7 +46,7 @@ test('unspaced Next is neutral and Uncertain returns for another pass', () => {
   assert.equal(next.deck.active[0], 'two');
   assert.equal(next.deck.completed, 0);
   const uncertain = reviewVocab(start, state, 'unsure', false, 1_700_000_000_000);
-  assert.equal(uncertain.progress.items.one.confidenceHistory[0], .5);
+  assert.equal(getVocabProgressEntry(uncertain.progress, 'one', 'i2e').confidenceHistory[0], .5);
   assert.deepEqual(uncertain.deck.middle, ['one']);
   assert.equal(uncertain.deck.completed, 0);
   const easy = reviewVocab(uncertain.deck, uncertain.progress, 'know', false, 1_700_000_000_000);
@@ -66,4 +67,14 @@ test('persistent Shuffle changes the active order and Off restores lesson order'
   assert.equal(toggledOff.completed, 1);
   const retry = { ...toggledOff, active: [], middle: ['a', 'c'] };
   assert.deepEqual(nextVocabRound(retry, true, () => 0).active, ['c', 'a']);
+});
+
+
+test('deck due selection is independent by vocabulary direction', () => {
+  const now = 1_800_000_000_000;
+  const state = reviewVocab(createDeck([{ id: 'one' }], { version: 1, items: {} }, false), { version: 1, items: {} }, 'know', true, now, 'i2e').progress;
+  const recognition = createDeck([{ id: 'one' }], state, true, now + 1000, false, Math.random, 'i2e');
+  const production = createDeck([{ id: 'one' }], state, true, now + 1000, false, Math.random, 'e2i');
+  assert.deepEqual(recognition.active, []);
+  assert.deepEqual(production.active, ['one']);
 });
