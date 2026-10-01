@@ -68,3 +68,13 @@ button:focus-visible,select:focus-visible,summary:focus-visible,.flashcard:focus
 @media(max-width:760px){.progress-hero{grid-template-columns:1fr 1fr}.progress-hero-main{grid-column:1/-1}.progress-dialog-scroll{padding:16px}.progress-modal-header{padding:18px 16px}.progress-dialog-footer{padding:12px 16px}.card-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.activity-grid{grid-template-columns:repeat(7,1fr)}}
 @media(max-width:480px){.progress-hero{grid-template-columns:1fr 1fr}.progress-metric strong{font-size:18px}.level-toast{gap:9px;padding:10px 11px}.level-toast-badge{min-width:54px;padding:7px 8px}.level-toast-sub{font-size:11px}.achievement-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.level-toast-host{transition:none}}
+
+/* Selected-set proficiency bar mirrors Duff's confidence-band summary. */
+.proficiency-card{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:12px}
+.proficiency-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.proficiency-heading strong{font-size:13px;color:var(--ink)}.proficiency-heading span{font-size:10px;color:var(--muted)}
+.stacked-bar{display:flex;width:100%;height:28px;border-radius:8px;overflow:hidden;background:var(--tint);border:1px solid var(--line)}
+.stacked-seg{display:block;height:100%;min-width:2px;transition:width .3s ease}
+.stacked-seg-b0{background:#a65858}.stacked-seg-b20{background:#c07a4c}.stacked-seg-b40{background:#c9a84c}.stacked-seg-b60{background:#a0ae5a}.stacked-seg-b80{background:#66a478}.stacked-seg-unseen{background:#8a8fa859}
+.stacked-legend{display:flex;flex-wrap:wrap;gap:6px 14px}.stacked-legend-item{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--ink)}.stacked-legend-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:0 0 auto}.stacked-legend-pct{color:var(--muted)}
+@media(max-width:520px){.proficiency-heading{align-items:flex-start;flex-direction:column;gap:2px}.stacked-legend{gap:5px 10px}.stacked-legend-item{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.stacked-seg{transition:none}}
