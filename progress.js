@@ -4,6 +4,7 @@ import { getNextEasyIntervalDays, msFromDays, getSrsEase, getSrsStage } from './
 const KEY = 'indonesian-study-progress-v1';
 const safeId = id => typeof id === 'string' && /^[a-z0-9][a-z0-9._-]{1,80}$/i.test(id) && id !== '__proto__' && id !== 'constructor';
 const count = n => Number.isFinite(n) && n > 0 ? Math.min(1000000, Math.floor(n)) : 0;
+const timestamp = n => Number.isFinite(n) && n > 0 ? Math.min(Number.MAX_SAFE_INTEGER, Math.floor(n)) : 0;
 const days = n => Number.isFinite(n) && n > 0 ? Math.min(60, n) : 0;
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
@@ -105,9 +106,9 @@ export function getCardStats(state, id, now = Date.now()) {
     correct: count(item.correct), wrong: count(item.wrong),
     streak: count(item.streak),
     confidencePct: confidence == null ? null : Math.round(confidence * 100),
-    dueAt: count(item.dueAt),
+    dueAt: timestamp(item.dueAt),
     dueInMs: item.dueAt ? item.dueAt - now : null,
-    last: count(item.last), first: count(item.first),
+    last: timestamp(item.last), first: timestamp(item.first),
     hasRatingBreakdown: rated > 0
   };
 }
@@ -120,13 +121,14 @@ export function normalizeProgress(input) {
       const item = {
         correct: count(value.correct),
         wrong: count(value.wrong),
-        last: count(value.last),
-        first: count(value.first),
+        last: timestamp(value.last),
+        first: timestamp(value.first),
         again: count(value.again),
         unsure: count(value.unsure),
         know: count(value.know)
       };
-      for (const key of ['dueAt', 'streak', 'easyStreak', 'srsStage', 'relearnLeft', 'lapseCount', 'leechStreak']) {
+      if (Object.hasOwn(value, 'dueAt')) item.dueAt = timestamp(value.dueAt);
+      for (const key of ['streak', 'easyStreak', 'srsStage', 'relearnLeft', 'lapseCount', 'leechStreak']) {
         if (Object.hasOwn(value, key)) item[key] = count(value[key]);
       }
       for (const key of ['intervalDays', 'lastEasyIntervalDays', 'preLapseIntervalDays']) {
