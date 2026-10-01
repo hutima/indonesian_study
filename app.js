@@ -51,7 +51,8 @@ let revealed = false;
 let chosen = null;
 let translationShown = false;
 let spaced = true;
-let reverse = false;
+const VOCAB_DIRECTION_KEY = 'indonesian-study-vocab-direction-v1';
+let reverse = localStorage.getItem(VOCAB_DIRECTION_KEY) === 'e2i';
 const MORPH_DIRECTION_KEY = 'indonesian-study-morph-direction-v1';
 let morphReverse = localStorage.getItem(MORPH_DIRECTION_KEY) === 'select';
 const SHUFFLE_KEY = 'indonesian-study-shuffle-v1';
@@ -666,8 +667,10 @@ function renderGrammar(item, items) {
 function render() {
   panel.replaceChildren();
   toolbar.hidden = mode !== 'vocabulary';
+  directionButton.hidden = mode !== 'vocabulary';
   directionButton.setAttribute('aria-pressed', String(reverse));
   directionButton.textContent = reverse ? 'English → Indonesian' : 'Indonesian → English';
+  directionButton.title = reverse ? 'Production practice: recall the Indonesian form' : 'Recognition practice: recall the English meaning';
   morphDirectionButton.hidden = mode !== 'morphology';
   morphDirectionButton.setAttribute('aria-pressed', String(morphReverse));
   morphDirectionButton.textContent = morphReverse ? 'Mode: Select a form' : 'Mode: Explain affixes';
@@ -747,7 +750,10 @@ document.querySelector('#reset-button').addEventListener('click', () => {
 });
 spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.setAttribute('aria-pressed', String(spaced)); spacedButton.textContent = `Spaced review: ${spaced ? 'On' : 'Off'}`; startVocabDeck(); render(); });
 directionButton.addEventListener('click', () => {
-  reverse = !reverse; revealed = false; render();
+  reverse = !reverse;
+  localStorage.setItem(VOCAB_DIRECTION_KEY, reverse ? 'e2i' : 'i2e');
+  revealed = false;
+  render();
 });
 morphDirectionButton.addEventListener('click', () => {
   morphReverse = !morphReverse;
