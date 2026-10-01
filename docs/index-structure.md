@@ -41,6 +41,10 @@ actually exists here.
 ### `.study-controls`
 
 - `#open-lessons`: opens the lesson/topic selector.
+- `#shuffle-button`: first-class vocabulary/morphology deck shuffle control.
+- `#direction-toggle`: first-class vocabulary direction control. It stays
+  outside Settings because English → Indonesian is active-production practice,
+  not merely an alternate display direction. The preference persists locally.
 - `#open-progress`: opens the Duff-style Progress modal; gamification no
   longer occupies permanent space in the study flow.
 - `#selection-summary`: compact description of the current lesson selection.
