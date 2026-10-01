@@ -10,7 +10,7 @@ test('curated units have unique stable IDs and complete vocabulary and question 
   assert.equal(FOUNDATION_UNITS.length, 5);
   assert.equal(TEXTBOOK_UNITS.length, 15);
   assert.equal(UNITS.length, 20);
-  assert.equal(UNIT_URLS.length, UNITS.length + 5); // supplement plus expanded manifest and three topic groups
+  assert.equal(UNIT_URLS.length, UNITS.length + 6); // supplement, custom focus, expanded manifest, and three topic groups
   assert.deepEqual(TEXTBOOK_UNITS.map(unit => unit.bookTopic), Array.from({ length: 15 }, (_, i) => i + 1));
   for (const unit of UNITS) {
     assert.ok(unit.vocabulary.length > 0);
