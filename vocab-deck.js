@@ -1,4 +1,4 @@
-import { dueVocab, recordVocabReview } from './progress.js';
+import { dueVocab, recordVocabReview, getVocabProgressEntry } from './progress.js';
 
 function shuffleIds(ids, random = Math.random) {
   const result = [...ids];
@@ -9,8 +9,8 @@ function shuffleIds(ids, random = Math.random) {
   return result;
 }
 
-export function createDeck(cards, progress, spaced, now = Date.now(), shuffle = false, random = Math.random) {
-  const selected = spaced ? dueVocab(cards, progress, now) : cards;
+export function createDeck(cards, progress, spaced, now = Date.now(), shuffle = false, random = Math.random, direction = 'i2e') {
+  const selected = spaced ? dueVocab(cards, progress, now, direction) : cards;
   const ids = selected.map(card => card.id);
   return { active: shuffle ? shuffleIds(ids, random) : ids, middle: [], completed: 0, total: selected.length };
 }
@@ -38,10 +38,10 @@ export function nextVocabRound(deck, shuffle = false, random = Math.random) {
   return { ...deck, active: shuffle ? shuffleIds(deck.middle, random) : [...deck.middle], middle: [] };
 }
 
-export function reviewVocab(deck, progress, action, spaced, now = Date.now()) {
+export function reviewVocab(deck, progress, action, spaced, now = Date.now(), direction = 'i2e') {
   if (!deck.active.length) return { deck, progress };
   const rating = action === 'next' && spaced ? 'again' : action;
-  const nextProgress = rating === 'next' ? progress : recordVocabReview(progress, deck.active[0], rating, spaced, now);
-  const leech = spaced && rating === 'again' && nextProgress.items[deck.active[0]]?.leechDrill;
+  const nextProgress = rating === 'next' ? progress : recordVocabReview(progress, deck.active[0], rating, spaced, now, direction);
+  const leech = spaced && rating === 'again' && getVocabProgressEntry(nextProgress, deck.active[0], direction)?.leechDrill;
   return { deck: markDeck(deck, leech ? 'unsure' : rating, spaced), progress: nextProgress };
 }
