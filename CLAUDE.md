@@ -24,9 +24,24 @@ This app does **not** use Duff's `?v=NNN` query-string cache-bust scheme.
 Runtime assets are bare relative URLs. Releases are refreshed by the service
 worker's cache name in `sw.js` (`indonesian-study-vNN`).
 
-When runtime code or content changes:
+### Release invariant: every deployed change must bump every service worker
 
-- bump the service-worker cache name so installed copies receive a new shell;
+**Do not merge or push a deployed app change without updating the service
+worker version(s).** The in-app **Update available** modal only appears when the
+browser detects a new service-worker script, so a content-only change can
+otherwise remain invisible to installed copies.
+
+For **every change to deployed app code, content, styles, assets, lessons,
+vocabulary, or offline data — including a one-line/content-only PR**:
+
+- find every service-worker file used by this app (currently `sw.js`) and bump
+  its cache/version token (currently `indonesian-study-vNN`);
+- if additional service workers are added later, bump **all of them** in the
+  same PR/release; updating only one worker is not sufficient;
+- treat the service-worker bump as part of the change itself, not as an
+  optional follow-up or a separate cleanup PR;
+- before merge, verify the worker source actually changed so an installed copy
+  can enter the waiting state and trigger the **Update available** modal;
 - if a new content module is added, register it in `UNIT_URLS` in
   `content/manifest.js` and allow it in the worker's `CACHE_CONTENT` URL
   validation;
@@ -35,6 +50,9 @@ When runtime code or content changes:
 - keep the waiting-worker behavior intact: an installed update should not
   replace the active worker until the user chooses Refresh now (or a later cold
   start naturally activates it).
+
+**Release checklist:** if a PR changes anything a user can receive from the
+deployed app and no service-worker version changed, the PR is incomplete.
 
 ### ES-module compatibility across installed versions
 
