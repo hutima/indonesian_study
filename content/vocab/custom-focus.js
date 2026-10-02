@@ -31,6 +31,12 @@ export const ACTIVE_STRUGGLE_WORDS = [
   { form: 'terkait', meaning: 'related; connected; concerning', pos: 'adjective / verb', register: 'formal', kind: 'derived', root: 'kait', section: 'reading', source: 'news reading' },
   { form: 'sedangkan', meaning: 'whereas; while; meanwhile', pos: 'conjunction', register: 'neutral', kind: 'derived', root: 'sedang', section: 'reading', source: 'news reading' },
   { form: 'perselisihan', meaning: 'dispute; disagreement', pos: 'noun', register: 'formal', kind: 'derived', root: 'selisih', section: 'reading', source: 'news reading' },
+  { form: 'secara', meaning: 'in a ... way; -ly; in terms of', pos: 'adverb', register: 'formal', kind: 'derived', root: 'cara', section: 'reading', source: 'news reading', note: 'High-frequency formal pattern: secara resmi = officially; secara umum = generally.' },
+  { form: 'kawasan', meaning: 'area; region', pos: 'noun', register: 'formal', kind: 'root', canonicalId: 'id-t08-voc-01', section: 'reading', source: 'news reading' },
+  { form: 'tingkat', meaning: 'level; rate; degree', pos: 'noun', register: 'formal', kind: 'root', section: 'reading', source: 'news reading', note: 'Common in news: tingkat pengangguran = unemployment rate.' },
+  { form: 'sejumlah', meaning: 'a number of; several', pos: 'quantifier', register: 'formal', kind: 'derived', root: 'jumlah', section: 'reading', source: 'news reading', note: 'Sejumlah pejabat = several officials / a number of officials.' },
+  { form: 'mengalami', meaning: 'to experience; undergo', pos: 'verb', register: 'formal', kind: 'derived', section: 'reading', source: 'news reading' },
+  { form: 'memengaruhi', meaning: 'to affect; influence', pos: 'verb', register: 'formal', kind: 'derived', root: 'pengaruh', section: 'reading', source: 'news reading' },
 
   { form: 'kegiatan', meaning: 'activity; activities', pos: 'noun', register: 'neutral', kind: 'derived', root: 'giat', section: 'everyday', source: 'lesson / listening' },
   { form: 'menikmati', meaning: 'to enjoy', pos: 'verb', register: 'neutral', kind: 'derived', root: 'nikmat', section: 'everyday', source: 'lesson / listening', note: 'Nikmati! = Enjoy it! / Enjoy!' },
@@ -40,6 +46,7 @@ export const ACTIVE_STRUGGLE_WORDS = [
   { form: 'sempat', meaning: 'to have/get the chance or time to', pos: 'auxiliary verb', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson' },
   { form: 'tadinya', meaning: 'originally; at first; previously', pos: 'adverb', register: 'neutral', kind: 'derived', root: 'tadi', section: 'everyday', source: 'production lesson' },
   { form: 'pengeluaran', meaning: 'spending; expenditure; expenses', pos: 'noun', register: 'neutral', kind: 'derived', root: 'keluar', section: 'everyday', source: 'production lesson' },
+  { form: 'hampir', meaning: 'almost; nearly', pos: 'adverb', register: 'neutral', kind: 'root', section: 'everyday', source: 'lesson / reading', note: 'Hampir jam sembilan = almost/nearly nine, not exactly nine.' },
   { form: 'lega', meaning: 'relieved; at ease; spacious', pos: 'adjective', register: 'neutral', kind: 'root', section: 'everyday', source: 'speaking / listening lesson' },
   { form: 'trotoar', meaning: 'sidewalk; pavement', pos: 'noun', register: 'neutral', kind: 'root', section: 'everyday', source: 'speaking lesson' },
   { form: 'halte', meaning: 'bus stop; transit stop', pos: 'noun', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson' },
@@ -49,6 +56,10 @@ export const ACTIVE_STRUGGLE_WORDS = [
   { form: 'ternyata', meaning: 'it turns out; actually (contrary to expectation)', pos: 'discourse marker', register: 'neutral', kind: 'derived', root: 'nyata', section: 'everyday', source: 'production lesson' },
   { form: 'akhirnya', meaning: 'finally; eventually', pos: 'adverb', register: 'neutral', kind: 'derived', root: 'akhir', section: 'everyday', source: 'production lesson' },
   { form: 'supaya', meaning: 'so that; in order that', pos: 'conjunction', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson' },
+  { form: 'agar', meaning: 'so that; in order to', pos: 'conjunction', register: 'formal', kind: 'root', canonicalId: 'id-u03-voc-agar', section: 'everyday', source: 'production lesson', note: 'Purpose connector; contrast sehingga, which normally introduces a result/consequence.' },
+  { form: 'sambil', meaning: 'while; while doing something else at the same time', pos: 'conjunction / adverb', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson', note: 'Simultaneous actions; do not confuse with sampai = until.' },
+  { form: 'sampai', meaning: 'until; up to; arrive/reach', pos: 'preposition / verb', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson', note: 'For a time endpoint: sampai jam sembilan = until nine.' },
+  { form: 'sehingga', meaning: 'so; with the result that', pos: 'conjunction', register: 'formal', kind: 'root', section: 'everyday', source: 'production lesson', note: 'Result/consequence connector; contrast agar/supaya = purpose.' },
   { form: 'jadinya', meaning: 'so; as a result; what it became', pos: 'discourse marker', register: 'informal', kind: 'derived', root: 'jadi', section: 'everyday', source: 'production lesson' }
 ];
 
