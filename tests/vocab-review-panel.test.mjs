@@ -38,6 +38,20 @@ test('Duff fast-forward shifts selected scheduling in one direction without muta
   assert.equal(state.vocabDirections.i2e.satu.dueAt, now + 3 * day);
 });
 
+test('fast-forward leaves an already-due legacy recognition entry in the legacy store', () => {
+  const now = 1_800_000_000_000;
+  const dueAt = now - 1;
+  const state = {
+    version: 1,
+    items: { lama: entry({ correct: 2, know: 2, last: now - 1000, first: now - 2000, dueAt, intervalDays: 1 }) },
+    vocabDirections: { i2e: {}, e2i: {} }
+  };
+
+  const next = advanceVocabScheduling(state, [{ id: 'lama' }], 22 * 60 * 60 * 1000, now, 'i2e');
+  assert.equal(next.vocabDirections.i2e.lama, undefined);
+  assert.equal(next.items.lama.dueAt, dueAt);
+});
+
 test('Duff return-to-circulation keeps review history while making the chosen direction due now', () => {
   const now = 1_800_000_000_000;
   const state = {
