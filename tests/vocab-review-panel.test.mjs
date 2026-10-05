@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeProgress } from '../progress.js';
-import { advanceVocabScheduling, returnVocabToDue, sortReviewCards } from '../vocab-review-panel.js';
+import { advanceVocabScheduling, returnVocabToDue, sortReviewCards } from '../vocab-review-state.js';
 
 function entry(overrides = {}) {
   return {
@@ -20,7 +19,7 @@ test('Duff fast-forward shifts selected scheduling in one direction without muta
   const now = 1_800_000_000_000;
   const day = 24 * 60 * 60 * 1000;
   const duffDay = 22 * 60 * 60 * 1000;
-  const state = normalizeProgress({
+  const state = {
     version: 1,
     items: {},
     vocabDirections: {
@@ -30,7 +29,7 @@ test('Duff fast-forward shifts selected scheduling in one direction without muta
       },
       e2i: { satu: entry({ correct: 1, know: 1, last: now, first: now, dueAt: now + 7 * day, intervalDays: 7 }) }
     }
-  });
+  };
 
   const next = advanceVocabScheduling(state, [{ id: 'satu' }], duffDay, now, 'i2e');
   assert.equal(next.vocabDirections.i2e.satu.dueAt, now + 3 * day - duffDay);
@@ -41,7 +40,7 @@ test('Duff fast-forward shifts selected scheduling in one direction without muta
 
 test('Duff return-to-circulation keeps review history while making the chosen direction due now', () => {
   const now = 1_800_000_000_000;
-  const state = normalizeProgress({
+  const state = {
     version: 1,
     items: {},
     vocabDirections: {
@@ -64,7 +63,7 @@ test('Duff return-to-circulation keeps review history while making the chosen di
       },
       e2i: {}
     }
-  });
+  };
 
   const next = returnVocabToDue(state, 'kata', now, 'i2e');
   const result = next.vocabDirections.i2e.kata;
@@ -87,7 +86,7 @@ test('review rows sort by last seen, Indonesian alphabet, and lowest confidence 
     { id: 'c', form: 'cari', meaning: 'seek' },
     { id: 'u', form: 'untouched', meaning: 'untouched' }
   ];
-  const state = normalizeProgress({
+  const state = {
     version: 1,
     items: {},
     vocabDirections: {
@@ -98,9 +97,9 @@ test('review rows sort by last seen, Indonesian alphabet, and lowest confidence 
       },
       e2i: {}
     }
-  });
+  };
 
-  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'lastSeen', now).map(card => card.id), ['b', 'c', 'a']);
-  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'alphabetical', now).map(card => card.id), ['a', 'b', 'c']);
-  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'confidence', now).map(card => card.id), ['b', 'c', 'a']);
+  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'lastSeen').map(card => card.id), ['b', 'c', 'a']);
+  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'alphabetical').map(card => card.id), ['a', 'b', 'c']);
+  assert.deepEqual(sortReviewCards(cards, state, 'i2e', 'confidence').map(card => card.id), ['b', 'c', 'a']);
 });
