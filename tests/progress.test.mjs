@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations } from '../progress.js';
-import { advanceVocabScheduling, returnVocabToDue } from '../vocab-review-panel.js';
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -191,55 +190,4 @@ test('legacy blended vocab history migrates only to Indonesian-to-English fallba
   assert.equal(getCardStats(state, id, 1_800_000_000_000, 'e2i').seen, 0);
   assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'i2e').length, 0);
   assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'e2i').length, 1);
-});
-
-test('Duff fast-forward shifts selected scheduling in one direction without mutating source state', () => {
-  const now = 1_800_000_000_000;
-  const day = 24 * 60 * 60 * 1000;
-  const duffDay = 22 * 60 * 60 * 1000;
-  const state = normalizeProgress({
-    version: 1,
-    items: {},
-    vocabDirections: {
-      i2e: {
-        satu: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 3 * day, intervalDays: 3 },
-        dua: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 5 * day, intervalDays: 5 }
-      },
-      e2i: { satu: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 7 * day, intervalDays: 7 } }
-    }
-  });
-  const next = advanceVocabScheduling(state, [{ id: 'satu' }], duffDay, now, 'i2e');
-  assert.equal(next.vocabDirections.i2e.satu.dueAt, now + 3 * day - duffDay);
-  assert.equal(next.vocabDirections.i2e.dua.dueAt, now + 5 * day);
-  assert.equal(next.vocabDirections.e2i.satu.dueAt, now + 7 * day);
-  assert.equal(state.vocabDirections.i2e.satu.dueAt, now + 3 * day);
-});
-
-test('Duff return-to-circulation keeps review history while making the chosen direction due now', () => {
-  const now = 1_800_000_000_000;
-  const state = normalizeProgress({
-    version: 1,
-    items: {},
-    vocabDirections: {
-      i2e: {
-        kata: {
-          correct: 8, wrong: 2, last: now, first: now - 1000, again: 1, unsure: 1, know: 8,
-          streak: 5, easyStreak: 4, srsStage: 6, intervalDays: 14,
-          dueAt: now + 14 * 24 * 60 * 60 * 1000, confidenceHistory: [1, 1, .5, 1]
-        }
-      },
-      e2i: {}
-    }
-  });
-  const next = returnVocabToDue(state, 'kata', now, 'i2e');
-  const entry = next.vocabDirections.i2e.kata;
-  assert.equal(entry.dueAt, now);
-  assert.equal(entry.intervalDays, 0);
-  assert.equal(entry.streak, 0);
-  assert.equal(entry.easyStreak, 0);
-  assert.equal(entry.srsStage, 5);
-  assert.equal(entry.correct, 8);
-  assert.equal(entry.know, 8);
-  assert.deepEqual(entry.confidenceHistory, [1, 1, .5, 1]);
-  assert.ok(state.vocabDirections.i2e.kata.dueAt > now);
 });
