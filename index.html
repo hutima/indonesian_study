@@ -7,6 +7,7 @@
   <meta name="description" content="Offline Indonesian vocabulary, morphology, grammar, and graded reading practice.">
   <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="./app.css">
+  <link rel="stylesheet" href="./review-panel.css">
   <title>Indonesian Study</title>
 </head>
 <body>
@@ -47,6 +48,18 @@
       <div id="vocab-deck-wrap" class="vocab-section-wrap"><label for="vocab-deck">Vocabulary deck</label><select id="vocab-deck" aria-label="Vocabulary deck"></select></div>
       <div id="vocab-section-wrap" class="vocab-section-wrap"><label for="vocab-section">Vocabulary section</label><select id="vocab-section" aria-label="Vocabulary section"></select></div>
       <div id="study-panel" class="study-panel" aria-live="polite"></div>
+      <div class="ff-row" id="ff-row" hidden>
+        <button type="button" id="fast-forward-day" title="Move future due dates for this vocabulary deck and direction one day closer">Fast-forward 1 day</button>
+        <button type="button" id="fast-forward-week" title="Move future due dates for this vocabulary deck and direction one week closer">Fast-forward 1 week</button>
+      </div>
+      <section class="review-shell" id="review-shell" aria-label="Vocabulary review progress">
+        <div class="review-panel" id="review-panel">
+          <div class="review-header"><span class="review-deck-tag" id="review-deck-tag">Full deck</span><span class="review-title">Progress</span></div>
+          <div class="review-stats" id="review-stats"></div>
+          <div class="review-sort-row" id="review-sort-row"></div>
+          <div class="review-list" id="review-list"></div>
+        </div>
+      </section>
       <details id="word-list" class="word-list"><summary>Vocabulary list</summary><div id="word-list-content"></div></details>
       <details class="study-resources"><summary>Lesson notes</summary>
         <div id="unit-description" class="unit-description"></div>
@@ -96,5 +109,6 @@
     <div class="actions"><button type="button" id="update-later" class="secondary">Later</button><button type="button" id="update-now" class="primary">Refresh now</button></div>
   </dialog>
   <script type="module" src="./app.js"></script>
+  <script type="module" src="./review-panel.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ actually exists here.
 ```
 <head>
   PWA/theme metadata
-  manifest + app.css
+  manifest + app.css + review-panel.css
 <body>
   .topbar
   main.layout
@@ -22,13 +22,15 @@ actually exists here.
       #vocab-deck-wrap
       #vocab-section-wrap
       #study-panel
+      #ff-row
+      #review-shell
       #word-list
       .study-resources
   footer
   #lesson-dialog
   #progress-dialog
   #update-dialog
-  module script: app.js
+  module scripts: app.js, review-panel.js
 ```
 
 ## Main study shell
@@ -86,6 +88,31 @@ Main dynamic mount for flashcards and questions. Vocabulary cards also render an
 expandable **Card stats** panel here with per-card review counts, current streak,
 confidence, due time, and last-seen time.
 
+### Duff-style vocabulary review panel
+
+Vocabulary mode keeps Duff's compact deck-status panel directly below the card:
+
+- `#ff-row` contains `#fast-forward-day` and `#fast-forward-week`. These are
+  spaced-review testing controls that move only the currently selected
+  vocabulary deck and direction closer to its due dates.
+- `#review-shell` / `#review-panel` is hidden outside Vocabulary mode.
+- `#review-deck-tag` names the current full/filtered/focus deck; progress is
+  still direction-specific even though Indonesian and English remain side by
+  side in the row list.
+- `#review-stats` shows In deck, Due now/Unconfirmed, Due later/Archived, high
+  confidence, low confidence, and the collapsible due-by-day schedule.
+- `#review-sort-row` switches the reviewed-card list among Last seen, A–Z, and
+  Confidence ordering.
+- `#review-list` contains only cards already reviewed in the current direction.
+  Each row includes Indonesian, English, due/seen/confidence metadata, a
+  confidence mark, and a × control that returns that word to circulation.
+
+`review-panel.js` owns this view. `vocab-review.js` contains its pure deck/count,
+sort, fast-forward, and return-to-circulation helpers. `vocab-deck.js` publishes
+its live deck/progress references through `globalThis.__indonesianVocabDeckBridge`
+so the ported panel can mirror the current in-flight rotation without moving the
+existing study-state implementation into a second scheduler.
+
 ### `#word-list`
 
 Collapsible vocabulary browser. In lesson mode it groups words by selected
@@ -99,7 +126,8 @@ Collapsible **Lesson notes** area containing:
 - `#unit-description`
 - `#lesson-guide`
 
-Progress analytics live in the dedicated modal instead of this in-flow panel.
+The bottom review panel is the immediate deck/SRS dashboard; broader progress
+analytics remain in the dedicated modal.
 
 ## Lesson selector dialog
 
@@ -156,29 +184,32 @@ that card is reviewed again; they are never copied into production history.
 The app only activates the waiting worker immediately when the user chooses
 Refresh now; otherwise the old version remains usable.
 
-## Script entry point
+## Script entry points
 
-The only page script is:
+The page scripts are:
 
 ```html
 <script type="module" src="./app.js"></script>
+<script type="module" src="./review-panel.js"></script>
 ```
 
 `app.js` imports the content manifest, personal focus vocabulary, progress/SRS
 helpers, deck ordering, charts, lesson selection, vocabulary section logic, and
-morphology helpers.
+morphology helpers. `review-panel.js` layers the Duff-style bottom progress
+panel over the same selected vocabulary and directional progress state.
 
 ## Offline/cache coupling
 
 `sw.js` precaches the shell and accepts the content URLs supplied through
-`UNIT_URLS` in `content/manifest.js`.
+`UNIT_URLS` in `content/manifest.js`. The shell now also precaches
+`review-panel.js`, `review-panel.css`, and `vocab-review.js`.
 
 When adding a new runtime content module:
 
 1. register it in `UNIT_URLS` when it belongs to the content pack;
 2. ensure `sw.js` allows that URL in its `CACHE_CONTENT` validation;
-3. add it to the shell as well when the module is imported directly by
-   `app.js` and must be available immediately offline;
+3. add it to the shell as well when the module is imported directly by a page
+   module and must be available immediately offline;
 4. bump the `indonesian-study-vNN` cache name.
 
 ## Maintenance
