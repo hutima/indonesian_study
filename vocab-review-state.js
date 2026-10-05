@@ -61,8 +61,9 @@ export function advanceVocabScheduling(state, cards, advanceMs, now = Date.now()
   if (!shift) return next;
   for (const card of cards || []) {
     if (!card?.id) continue;
+    const prior = getEntry(next, card.id, direction);
+    if (!prior?.dueAt || prior.dueAt <= now) continue;
     const entry = copyEntryIntoDirection(next, card.id, direction);
-    if (!entry?.dueAt || entry.dueAt <= now) continue;
     entry.dueAt = Math.max(now, entry.dueAt - shift);
     entry.intervalDays = Math.max(0, daysFromMs(entry.dueAt - now));
   }
