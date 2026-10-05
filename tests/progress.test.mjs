@@ -1,85 +1,199 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  normalizeProgress,
-  recordAnswer,
-  recordVocabReview,
-  dueVocab,
-  getCardStats,
-  getVocabProgressEntry
-} from '../progress.js';
+import { loadProgress, normalizeProgress, saveProgress, recordAnswer, recordVocabReview, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations } from '../progress.js';
 import { advanceVocabScheduling, returnVocabToDue } from '../vocab-review-panel.js';
 
-function item(overrides = {}) {
-  return {
-    correct: 0,
-    wrong: 0,
-    last: 0,
-    first: 0,
-    again: 0,
-    unsure: 0,
-    know: 0,
-    ...overrides
-  };
+function memoryStorage(initial = {}) {
+  const data = new Map(Object.entries(initial));
+  return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
 }
 
-test('normalizeProgress always returns stable stores', () => {
-  const progress = normalizeProgress(null);
-  assert.deepEqual(progress.items, {});
-  assert.deepEqual(progress.vocabDirections, { i2e: {}, e2i: {} });
+test('progress follows stable IDs across content reordering', () => {
+  const storage = memoryStorage();
+  const state = recordAnswer(loadProgress(storage), 'u01.m03', 'correct');
+  saveProgress(storage, state);
+  assert.equal(loadProgress(storage).items['u01.m03'].correct, 1);
+  assert.equal(loadProgress(storage).items['u01.m02'], undefined);
 });
 
-test('legacy item history counts only toward Indonesian to English recognition', () => {
-  const state = normalizeProgress({ version: 1, items: { kata: item({ correct: 3, wrong: 1, last: 100 }) } });
-  assert.equal(getVocabProgressEntry(state, 'kata', 'i2e').correct, 3);
-  assert.equal(getVocabProgressEntry(state, 'kata', 'e2i'), undefined);
+test('malformed data falls back safely and does not pollute prototypes', () => {
+  const storage = memoryStorage({ 'indonesian-study-progress-v1': '{broken' });
+  assert.deepEqual(loadProgress(storage).items, {});
+  const state = recordAnswer(loadProgress(storage), '__proto__', 'correct');
+  assert.equal(Object.hasOwn(state.items, '__proto__'), false);
 });
 
-test('recordAnswer preserves first timestamp and updates last', () => {
-  let state = normalizeProgress(null);
-  state = recordAnswer(state, 'x1', 'correct', { now: 1000 });
-  state = recordAnswer(state, 'x1', 'wrong', { now: 2000 });
-  assert.equal(state.items.x1.first, 1000);
-  assert.equal(state.items.x1.last, 2000);
-  assert.equal(state.items.x1.correct, 1);
-  assert.equal(state.items.x1.wrong, 1);
+test('imported counters are normalized', () => {
+  const storage = memoryStorage({ 'indonesian-study-progress-v1': JSON.stringify({ version: 1, items: { 'u01.v01': { correct: -3, wrong: 2.7, last: 'oops' } } }) });
+  assert.deepEqual(loadProgress(storage).items['u01.v01'], { correct: 0, wrong: 2, last: 0, first: 0, again: 0, unsure: 0, know: 0 });
 });
 
-test('vocabulary reviews are stored independently by direction', () => {
-  let state = normalizeProgress(null);
-  state = recordVocabReview(state, 'kata', 'know', true, 1000, 'i2e');
-  state = recordVocabReview(state, 'kata', 'again', true, 2000, 'e2i');
-  assert.equal(getVocabProgressEntry(state, 'kata', 'i2e').know, 1);
-  assert.equal(getVocabProgressEntry(state, 'kata', 'e2i').again, 1);
+test('an ID matching an inherited Object property records a finite mark', () => {
+  const state = recordAnswer({ version: 1, items: {} }, 'toString', 'correct');
+  assert.equal(state.items.toString.correct, 1);
 });
 
-test('card stats report directional confidence from the rolling history', () => {
-  let state = normalizeProgress(null);
-  state = recordVocabReview(state, 'kata', 'know', false, 1000, 'i2e');
-  state = recordVocabReview(state, 'kata', 'unsure', false, 2000, 'i2e');
-  const stats = getCardStats(state, 'kata', 3000, 'i2e');
-  assert.equal(stats.seen, 2);
-  assert.equal(stats.easy, 1);
+test('spaced Know defers a vocab card, then it becomes due again', () => {
+  const now = 1_700_000_000_000;
+  const state = recordVocabReview({ version: 1, items: {} }, 'id-u01-voc-buku', 'know', true, now);
+  assert.equal(getVocabProgressEntry(state, 'id-u01-voc-buku', 'i2e').correct, 1);
+  assert.deepEqual(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 1000), []);
+  assert.equal(dueVocab([{ id: 'id-u01-voc-buku' }], state, now + 24 * 60 * 60 * 1000).length, 1);
+});
+
+test('spaced Again makes the card due soon; Unsure uses a shorter delay than Know', () => {
+  const now = 1_700_000_000_000;
+  const first = recordVocabReview({ version: 1, items: {} }, 'id-u02-voc-baca', 'know', true, now);
+  const second = recordVocabReview(first, 'id-u02-voc-baca', 'know', true, now + 24 * 60 * 60 * 1000);
+  const unsure = recordVocabReview(second, 'id-u02-voc-baca', 'unsure', true, now + 2 * 24 * 60 * 60 * 1000);
+  const again = recordVocabReview(second, 'id-u02-voc-baca', 'again', true, now + 2 * 24 * 60 * 60 * 1000);
+  assert.ok(getVocabProgressEntry(again, 'id-u02-voc-baca', 'i2e').dueAt < getVocabProgressEntry(unsure, 'id-u02-voc-baca', 'i2e').dueAt);
+  assert.ok(getVocabProgressEntry(unsure, 'id-u02-voc-baca', 'i2e').dueAt < getVocabProgressEntry(second, 'id-u02-voc-baca', 'i2e').dueAt + 7 * 24 * 60 * 60 * 1000);
+});
+
+test('eight-month Duff cadence stabilizes before growth and retains relearn state across saves', () => {
+  const storage = memoryStorage();
+  const id = 'id-u01-voc-rumah';
+  let state = loadProgress(storage);
+  const start = 1_700_000_000_000;
+  for (let n = 0; n < 5; n++) {
+    state = recordVocabReview(state, id, 'know', true, start + n * 86400000);
+    if (n < 4) assert.equal(getVocabProgressEntry(state, id, 'i2e').intervalDays, 1);
+  }
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').intervalDays, 2);
+  saveProgress(storage, state);
+  state = recordVocabReview(loadProgress(storage), id, 'again', true, start + 6 * 86400000);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').inRelearn, true);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').relearnLeft, 2);
+  assert.equal(getVocabProgressEntry(state, id, 'i2e').dueAt, start + 6 * 86400000 + 300000);
+  const uncertain = recordVocabReview(loadProgress(storage), id, 'unsure', true, start + 6 * 86400000);
+  assert.equal(getVocabProgressEntry(uncertain, id, 'i2e').dueAt, start + 6 * 86400000 + 7200000);
+});
+
+test('four hard lapses invoke Duff relaxed leech drill', () => {
+  let state = { version: 1, items: {} };
+  for (let n = 0; n < 4; n++) state = recordVocabReview(state, 'id-u02-voc-baca', 'again', true, 1_700_000_000_000 + n * 86400000);
+  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').leechDrill, true);
+  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').intervalDays, 1);
+});
+
+
+test('vocab reviews keep timestamps, rating breakdown, XP, and daily streaks', () => {
+  const id = 'id-u01-voc-rumah';
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  const day4 = new Date(2026, 0, 8, 12, 0, 0).getTime();
+  let state = recordVocabReview({ version: 1, items: {} }, id, 'again', true, day1);
+  state = recordVocabReview(state, id, 'know', true, day2);
+  const card = getCardStats(state, id, day2);
+  assert.equal(card.seen, 2);
+  assert.equal(card.hard, 1);
+  assert.equal(card.easy, 1);
+  assert.equal(card.last, day2);
+  assert.ok(getVocabProgressEntry(state, id, 'i2e').dueAt > day2);
+  const game = getGamificationSummary(state, day2);
+  assert.equal(game.currentStreak, 2);
+  assert.equal(game.todayReviews, 1);
+  assert.equal(game.xp, 10);
+  assert.equal(getGamificationSummary(state, day4).currentStreak, 0);
+});
+
+test('legacy card history remains visible when new rating-specific stats begin', () => {
+  const id = 'id-u01-voc-buku';
+  const legacy = { version: 1, items: { [id]: { correct: 4, wrong: 2, last: 1_700_000_000_000 } } };
+  const state = recordVocabReview(legacy, id, 'unsure', false, 1_700_000_100_000);
+  const stats = getCardStats(state, id);
+  assert.equal(stats.seen, 7);
   assert.equal(stats.unsure, 1);
-  assert.equal(stats.confidencePct, 75);
+  assert.equal(stats.legacyUnclassified, 6);
 });
 
-test('dueVocab uses the requested direction only', () => {
-  const now = 10_000;
-  const state = normalizeProgress({
+
+test('achievements cover daily use, review milestones, streaks, and card mastery', () => {
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  let state = { version: 1, items: {} };
+  for (let n = 0; n < 10; n++) {
+    state = recordAnswer(state, `achievement-card-${n}`, 'correct', { now: day1 });
+  }
+  state = recordAnswer(state, 'achievement-card-next-day', 'correct', { now: day2 });
+  state.items['achievement-card-0'].streak = 3;
+  const earned = new Set(getAchievements(state, day2).filter(a => a.earned).map(a => a.id));
+  assert.ok(earned.has('daily_first_review'));
+  assert.ok(earned.has('first_review'));
+  assert.ok(earned.has('ten_reviews'));
+  assert.equal(earned.has('streak_3'), false);
+  assert.equal(earned.has('strong_10'), false);
+});
+
+test('celebration state baselines old progress then emits only newly earned badges and ranks', () => {
+  const now = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  let state = recordAnswer({ version: 1, items: {} }, 'card-1', 'correct', { now });
+  let sync = syncGamificationCelebrations(state, now);
+  state = sync.state;
+  assert.equal(sync.level, null);
+  assert.deepEqual(sync.achievements, []);
+
+  for (let n = 2; n <= 10; n++) state = recordAnswer(state, `card-${n}`, 'correct', { now });
+  sync = syncGamificationCelebrations(state, now);
+  assert.ok(sync.achievements.some(a => a.id === 'ten_reviews'));
+  assert.ok(sync.level && sync.level.level >= 2);
+
+  const repeat = syncGamificationCelebrations(sync.state, now);
+  assert.equal(repeat.level, null);
+  assert.deepEqual(repeat.achievements, []);
+});
+
+test('daily achievement can celebrate again on a new study day', () => {
+  const day1 = new Date(2026, 0, 5, 12, 0, 0).getTime();
+  const day2 = new Date(2026, 0, 6, 12, 0, 0).getTime();
+  let state = recordAnswer({ version: 1, items: {} }, 'card-a', 'correct', { now: day1 });
+  state = syncGamificationCelebrations(state, day1).state;
+  state = recordAnswer(state, 'card-b', 'correct', { now: day2 });
+  const sync = syncGamificationCelebrations(state, day2);
+  assert.ok(sync.achievements.some(a => a.id === 'daily_first_review'));
+});
+
+
+test('vocabulary recognition and production keep independent histories and schedules', () => {
+  const id = 'id-u03-voc-ternyata';
+  const now = 1_800_000_000_000;
+  let state = recordVocabReview({ version: 1, items: {} }, id, 'know', true, now, 'i2e');
+
+  const recognition = getCardStats(state, id, now, 'i2e');
+  const productionBefore = getCardStats(state, id, now, 'e2i');
+  assert.equal(recognition.easy, 1);
+  assert.equal(recognition.seen, 1);
+  assert.equal(productionBefore.seen, 0);
+  assert.equal(dueVocab([{ id }], state, now + 1000, 'i2e').length, 0);
+  assert.equal(dueVocab([{ id }], state, now + 1000, 'e2i').length, 1);
+
+  state = recordVocabReview(state, id, 'again', true, now + 2000, 'e2i');
+  const recognitionAfter = getCardStats(state, id, now + 2000, 'i2e');
+  const productionAfter = getCardStats(state, id, now + 2000, 'e2i');
+  assert.equal(recognitionAfter.easy, 1);
+  assert.equal(recognitionAfter.hard, 0);
+  assert.equal(productionAfter.easy, 0);
+  assert.equal(productionAfter.hard, 1);
+  assert.notEqual(recognitionAfter.dueAt, productionAfter.dueAt);
+});
+
+test('legacy blended vocab history migrates only to Indonesian-to-English fallback', () => {
+  const id = 'id-u04-voc-ongkos';
+  const legacy = {
     version: 1,
-    items: {},
-    vocabDirections: {
-      i2e: { kata: item({ dueAt: now + 5000 }) },
-      e2i: { kata: item({ dueAt: now - 1 }) }
+    items: {
+      [id]: { correct: 3, wrong: 1, know: 3, again: 1, last: 1_700_000_000_000, dueAt: 1_900_000_000_000 }
     }
-  });
-  const cards = [{ id: 'kata' }];
-  assert.deepEqual(dueVocab(cards, state, now, 'i2e'), []);
-  assert.deepEqual(dueVocab(cards, state, now, 'e2i').map(card => card.id), ['kata']);
+  };
+  const state = normalizeProgress(legacy);
+  assert.equal(getCardStats(state, id, 1_800_000_000_000, 'i2e').seen, 4);
+  assert.equal(getCardStats(state, id, 1_800_000_000_000, 'e2i').seen, 0);
+  assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'i2e').length, 0);
+  assert.equal(dueVocab([{ id }], state, 1_800_000_000_000, 'e2i').length, 1);
 });
 
-test('fast-forward shifts only selected-card scheduling in one direction using Duff study-day timing', () => {
+test('Duff fast-forward shifts selected scheduling in one direction without mutating source state', () => {
   const now = 1_800_000_000_000;
   const day = 24 * 60 * 60 * 1000;
   const duffDay = 22 * 60 * 60 * 1000;
@@ -88,13 +202,12 @@ test('fast-forward shifts only selected-card scheduling in one direction using D
     items: {},
     vocabDirections: {
       i2e: {
-        satu: item({ dueAt: now + 3 * day, intervalDays: 3 }),
-        dua: item({ dueAt: now + 5 * day, intervalDays: 5 })
+        satu: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 3 * day, intervalDays: 3 },
+        dua: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 5 * day, intervalDays: 5 }
       },
-      e2i: { satu: item({ dueAt: now + 7 * day, intervalDays: 7 }) }
+      e2i: { satu: { correct: 1, wrong: 0, last: now, first: now, again: 0, unsure: 0, know: 1, dueAt: now + 7 * day, intervalDays: 7 } }
     }
   });
-
   const next = advanceVocabScheduling(state, [{ id: 'satu' }], duffDay, now, 'i2e');
   assert.equal(next.vocabDirections.i2e.satu.dueAt, now + 3 * day - duffDay);
   assert.equal(next.vocabDirections.i2e.dua.dueAt, now + 5 * day);
@@ -102,31 +215,22 @@ test('fast-forward shifts only selected-card scheduling in one direction using D
   assert.equal(state.vocabDirections.i2e.satu.dueAt, now + 3 * day);
 });
 
-test('return-to-circulation makes the selected direction due now without erasing history', () => {
+test('Duff return-to-circulation keeps review history while making the chosen direction due now', () => {
   const now = 1_800_000_000_000;
   const state = normalizeProgress({
     version: 1,
     items: {},
     vocabDirections: {
       i2e: {
-        kata: item({
-          correct: 8,
-          wrong: 2,
-          know: 8,
-          unsure: 1,
-          again: 1,
-          streak: 5,
-          easyStreak: 4,
-          srsStage: 6,
-          intervalDays: 14,
-          dueAt: now + 14 * 24 * 60 * 60 * 1000,
-          confidenceHistory: [1, 1, .5, 1]
-        })
+        kata: {
+          correct: 8, wrong: 2, last: now, first: now - 1000, again: 1, unsure: 1, know: 8,
+          streak: 5, easyStreak: 4, srsStage: 6, intervalDays: 14,
+          dueAt: now + 14 * 24 * 60 * 60 * 1000, confidenceHistory: [1, 1, .5, 1]
+        }
       },
       e2i: {}
     }
   });
-
   const next = returnVocabToDue(state, 'kata', now, 'i2e');
   const entry = next.vocabDirections.i2e.kata;
   assert.equal(entry.dueAt, now);
@@ -137,5 +241,5 @@ test('return-to-circulation makes the selected direction due now without erasing
   assert.equal(entry.correct, 8);
   assert.equal(entry.know, 8);
   assert.deepEqual(entry.confidenceHistory, [1, 1, .5, 1]);
-  assert.equal(state.vocabDirections.i2e.kata.dueAt > now, true);
+  assert.ok(state.vocabDirections.i2e.kata.dueAt > now);
 });
