@@ -12,7 +12,7 @@ actually exists here.
 ```
 <head>
   PWA/theme metadata
-  manifest + app.css
+  manifest + app.css + vocab-review-panel.css
 <body>
   .topbar
   main.layout
@@ -22,13 +22,14 @@ actually exists here.
       #vocab-deck-wrap
       #vocab-section-wrap
       #study-panel
+      #duff-review-shell (inserted dynamically after #study-panel in vocabulary mode)
       #word-list
       .study-resources
   footer
   #lesson-dialog
   #progress-dialog
   #update-dialog
-  module script: app.js
+  module scripts: app.js, vocab-review-panel.js
 ```
 
 ## Main study shell
@@ -85,6 +86,27 @@ rules are in `docs/curriculum/custom-vocabulary.md`.
 Main dynamic mount for flashcards and questions. Vocabulary cards also render an
 expandable **Card stats** panel here with per-card review counts, current streak,
 confidence, due time, and last-seen time.
+
+### `#duff-review-shell`
+
+`vocab-review-panel.js` creates this in-flow section immediately after
+`#study-panel` while Vocabulary mode is active. It ports the more useful Duff
+bottom-panel workflow without replacing the larger Progress modal.
+
+It contains:
+
+- spaced-review developer controls for **Fast-forward 1 day** and
+  **Fast-forward 1 week**;
+- selected-deck counts for in-deck / due-now / due-later cards;
+- high- vs low-confidence counts for the active vocabulary direction;
+- the collapsible due-by-day histogram;
+- a reviewed-card list sortable by **Last seen**, **A–Z**, or **Confidence**;
+- per-row prompt/answer, due/seen/confidence metadata, and a `×` control that
+  returns that card to circulation now.
+
+All counts and rows are scoped to the same current vocabulary deck, subsection,
+and Indonesian→English / English→Indonesian direction as the flashcard session.
+The panel is hidden in Morphology, Grammar, and Reading modes.
 
 ### `#word-list`
 
@@ -156,29 +178,37 @@ that card is reviewed again; they are never copied into production history.
 The app only activates the waiting worker immediately when the user chooses
 Refresh now; otherwise the old version remains usable.
 
-## Script entry point
+## Script entry points
 
-The only page script is:
+The page loads two modules, in this order:
 
 ```html
 <script type="module" src="./app.js"></script>
+<script type="module" src="./vocab-review-panel.js"></script>
 ```
 
-`app.js` imports the content manifest, personal focus vocabulary, progress/SRS
-helpers, deck ordering, charts, lesson selection, vocabulary section logic, and
-morphology helpers.
+`app.js` owns the core study UI and imports the content manifest, personal focus
+vocabulary, progress/SRS helpers, deck ordering, charts, lesson selection,
+vocabulary section logic, and morphology helpers.
+
+`vocab-review-panel.js` is an additive Duff-port layer. It reads the same
+persistent selection/direction/progress stores and renders the bottom review
+panel. Its pure scheduling/sorting operations live in `vocab-review-state.js`,
+so fast-forward and return-to-circulation use the existing progress structure
+rather than creating a second SRS data model.
 
 ## Offline/cache coupling
 
-`sw.js` precaches the shell and accepts the content URLs supplied through
-`UNIT_URLS` in `content/manifest.js`.
+`sw.js` precaches the shell, including all review-panel JS/CSS assets, and
+accepts the content URLs supplied through `UNIT_URLS` in
+`content/manifest.js`.
 
 When adding a new runtime content module:
 
 1. register it in `UNIT_URLS` when it belongs to the content pack;
 2. ensure `sw.js` allows that URL in its `CACHE_CONTENT` validation;
-3. add it to the shell as well when the module is imported directly by
-   `app.js` and must be available immediately offline;
+3. add it to the shell as well when the module is imported directly by a page
+   entry module and must be available immediately offline;
 4. bump the `indonesian-study-vNN` cache name.
 
 ## Maintenance
