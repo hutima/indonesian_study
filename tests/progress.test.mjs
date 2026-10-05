@@ -79,9 +79,10 @@ test('dueVocab uses the requested direction only', () => {
   assert.deepEqual(dueVocab(cards, state, now, 'e2i').map(card => card.id), ['kata']);
 });
 
-test('fast-forward shifts only selected-card scheduling in one direction', () => {
+test('fast-forward shifts only selected-card scheduling in one direction using Duff study-day timing', () => {
   const now = 1_800_000_000_000;
   const day = 24 * 60 * 60 * 1000;
+  const duffDay = 22 * 60 * 60 * 1000;
   const state = normalizeProgress({
     version: 1,
     items: {},
@@ -94,8 +95,8 @@ test('fast-forward shifts only selected-card scheduling in one direction', () =>
     }
   });
 
-  const next = advanceVocabScheduling(state, [{ id: 'satu' }], day, now, 'i2e');
-  assert.equal(next.vocabDirections.i2e.satu.dueAt, now + 2 * day);
+  const next = advanceVocabScheduling(state, [{ id: 'satu' }], duffDay, now, 'i2e');
+  assert.equal(next.vocabDirections.i2e.satu.dueAt, now + 3 * day - duffDay);
   assert.equal(next.vocabDirections.i2e.dua.dueAt, now + 5 * day);
   assert.equal(next.vocabDirections.e2i.satu.dueAt, now + 7 * day);
   assert.equal(state.vocabDirections.i2e.satu.dueAt, now + 3 * day);
