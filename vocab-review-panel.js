@@ -1,90 +1,17 @@
 import { UNITS, TEXTBOOK_UNITS } from './content/manifest.js';
-import {
-  loadProgress,
-  normalizeProgress,
-  saveProgress,
-  dueVocab,
-  getCardStats,
-  getVocabProgressEntry
-} from './progress.js';
+import { loadProgress, saveProgress, dueVocab, getCardStats } from './progress.js';
 import { dueBuckets } from './vocab-charts.js';
 import { SELECTION_KEY, normalizeLessonIds, itemsForMode } from './lesson-selection.js';
 import { VOCAB_SECTIONS, filterVocabSection } from './vocab-sections.js';
 import { resolveCustomVocabulary } from './content/vocab/custom-focus.js';
 import { msFromDays, daysFromMs } from './js/domain/srs/scheduler.js';
+import { advanceVocabScheduling, returnVocabToDue, sortReviewCards } from './vocab-review-state.js';
 
 const VOCAB_DIRECTION_KEY = 'indonesian-study-vocab-direction-v1';
 const VOCAB_SECTION_KEY = 'indonesian-study-vocab-section-v1';
 const VOCAB_DECK_KEY = 'indonesian-study-vocab-deck-v1';
 const REVIEW_SORT_KEY = 'indonesian-study-review-sort-v1';
 const SORT_MODES = new Set(['lastSeen', 'alphabetical', 'confidence']);
-
-function directionKey(direction) {
-  return direction === 'e2i' ? 'e2i' : 'i2e';
-}
-
-function cloneEntryIntoDirection(state, id, direction) {
-  const dir = directionKey(direction);
-  const prior = getVocabProgressEntry(state, id, dir);
-  if (!prior) return null;
-  const copy = { ...prior };
-  if (Array.isArray(prior.confidenceHistory)) copy.confidenceHistory = [...prior.confidenceHistory];
-  state.vocabDirections[dir][id] = copy;
-  return copy;
-}
-
-/**
- * Duff-style developer control: pull selected scheduled cards closer by a fixed
- * amount without changing review history. Only the active vocabulary direction
- * is touched; the other direction remains independent.
- */
-export function advanceVocabScheduling(state, cards, advanceMs, now = Date.now(), direction = 'i2e') {
-  const next = normalizeProgress(state);
-  const shift = Math.max(0, Number(advanceMs) || 0);
-  if (!shift) return next;
-  for (const card of cards || []) {
-    if (!card?.id) continue;
-    const entry = cloneEntryIntoDirection(next, card.id, direction);
-    if (!entry?.dueAt || entry.dueAt <= now) continue;
-    entry.dueAt = Math.max(now, entry.dueAt - shift);
-    entry.intervalDays = Math.max(0, daysFromMs(entry.dueAt - now));
-  }
-  return next;
-}
-
-/**
- * Duff-style “return to circulation” action. It preserves historical attempts
- * and confidence while making this direction immediately due again.
- */
-export function returnVocabToDue(state, id, now = Date.now(), direction = 'i2e') {
-  const next = normalizeProgress(state);
-  const entry = cloneEntryIntoDirection(next, id, direction);
-  if (!entry) return next;
-  entry.dueAt = now;
-  entry.intervalDays = 0;
-  entry.streak = 0;
-  entry.easyStreak = 0;
-  entry.srsStage = Math.max(0, (Number(entry.srsStage) || 0) - 1);
-  return next;
-}
-
-export function sortReviewCards(cards, state, direction = 'i2e', mode = 'lastSeen', now = Date.now()) {
-  const selectedMode = SORT_MODES.has(mode) ? mode : 'lastSeen';
-  const rows = (cards || []).filter(card => getCardStats(state, card.id, now, direction).seen > 0);
-  const alpha = (a, b) => String(a.form || '').localeCompare(String(b.form || ''), 'id', { sensitivity: 'base' });
-  rows.sort((a, b) => {
-    const aStats = getCardStats(state, a.id, now, direction);
-    const bStats = getCardStats(state, b.id, now, direction);
-    if (selectedMode === 'confidence') {
-      const av = aStats.confidencePct == null ? -1 : aStats.confidencePct;
-      const bv = bStats.confidencePct == null ? -1 : bStats.confidencePct;
-      return av === bv ? alpha(a, b) : av - bv;
-    }
-    if (selectedMode === 'alphabetical') return alpha(a, b);
-    return aStats.last === bStats.last ? alpha(a, b) : bStats.last - aStats.last;
-  });
-  return rows;
-}
 
 function currentDirection() {
   return localStorage.getItem(VOCAB_DIRECTION_KEY) === 'e2i' ? 'e2i' : 'i2e';
@@ -226,7 +153,7 @@ function renderReviewPanel() {
   sortRow.append(group);
 
   const list = make('div', 'duff-review-list');
-  const rows = sortReviewCards(cards, state, direction, sortMode, now);
+  const rows = sortReviewCards(cards, state, direction, sortMode);
   if (!rows.length) {
     list.append(make('span', 'duff-review-empty', 'Mark cards as you study to track your progress in this direction.'));
   }
@@ -242,7 +169,8 @@ function renderReviewPanel() {
     left.append(make('span', 'duff-review-meta', `${spaced ? formatDue(cardStats.dueAt, now) + ' · ' : ''}seen ×${cardStats.seen} · ${confidence}`));
     right.append(make('span', 'duff-review-primary', answer));
     right.append(make('span', 'duff-review-meta', [card.pos, card.register].filter(Boolean).join(' · ')));
-    const badge = make('span', `duff-review-badge${cardStats.confidencePct != null && cardStats.confidencePct >= 80 ? ' known' : ''}`, cardStats.confidencePct != null && cardStats.confidencePct >= 80 ? '✓' : '○');
+    const known = cardStats.confidencePct != null && cardStats.confidencePct >= 80;
+    const badge = make('span', `duff-review-badge${known ? ' known' : ''}`, known ? '✓' : '○');
     const returnButton = make('button', 'duff-return-btn', '×');
     returnButton.type = 'button';
     returnButton.title = 'Return this card to circulation now';
