@@ -6,10 +6,9 @@ import {
   recordVocabReview,
   dueVocab,
   getCardStats,
-  getVocabProgressEntry,
-  advanceVocabScheduling,
-  returnVocabToDue
+  getVocabProgressEntry
 } from '../progress.js';
+import { advanceVocabScheduling, returnVocabToDue } from '../vocab-review-panel.js';
 
 function item(overrides = {}) {
   return {
