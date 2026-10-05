@@ -170,18 +170,26 @@ function fastForward(advanceMs) {
 
   const bridge = globalThis.__indonesianVocabDeckBridge;
   const liveDeck = bridge?.deck;
+  const liveProgress = bridge?.progress;
   const synced = syncBridgeProgress(next, before);
   if (synced && liveDeck) {
     const shuffle = localStorage.getItem(SHUFFLE_KEY) === 'true';
     const rebuilt = createDeck(cards, next, true, now, shuffle, Math.random, direction);
     Object.assign(liveDeck, rebuilt);
     globalThis.__indonesianVocabDeckBridge.deck = liveDeck;
-    globalThis.__indonesianVocabDeckBridge.progress = bridge.progress;
+    globalThis.__indonesianVocabDeckBridge.progress = liveProgress;
     nudgeAppRender();
     queueRender();
     return;
   }
   location.reload();
+}
+
+function syncBridgeUndo() {
+  const bridge = globalThis.__indonesianVocabDeckBridge;
+  const previous = bridge?.history?.pop();
+  if (previous) bridge.deck = previous;
+  queueRender();
 }
 
 function renderReviewPanel() {
@@ -278,9 +286,19 @@ document.querySelector('#fast-forward-week')?.addEventListener('click', () => fa
 
 studyPanel && new MutationObserver(queueRender).observe(studyPanel, { childList: true, subtree: true });
 document.addEventListener('click', event => {
+  const clickedButton = event.target.closest('button');
+  if (clickedButton?.textContent?.includes('Undo')) {
+    setTimeout(syncBridgeUndo, 0);
+    return;
+  }
   if (event.target.closest('[data-mode], #direction-toggle, #spaced-toggle, #shuffle-button, #open-lessons, #done-lessons, #select-all-topics, #clear-lessons')) {
     setTimeout(queueRender, 0);
   }
+});
+document.addEventListener('keydown', event => {
+  if (!isVocabularyMode() || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.target.closest('input, select, textarea, dialog, button, summary')) return;
+  if ((event.key === 'z' || event.key === 'Z') && globalThis.__indonesianVocabDeckBridge?.history?.length) setTimeout(syncBridgeUndo, 0);
 });
 document.addEventListener('change', event => {
   if (event.target.matches('#vocab-deck, #vocab-section, #lesson-vocab-section, #import-file')) setTimeout(queueRender, 0);

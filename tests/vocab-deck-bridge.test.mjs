@@ -6,4 +6,6 @@ test('vocab deck publishes the live deck bridge used by the Duff-style review pa
   const source = await fs.readFile(new URL('../vocab-deck.js', import.meta.url), 'utf8');
   assert.match(source, /__indonesianVocabDeckBridge/);
   assert.match(source, /publishDeckBridge/);
+  assert.match(source, /pushBridgeSnapshot/);
+  assert.match(source, /history/);
 });
