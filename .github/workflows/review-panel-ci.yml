@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/duff-review-panel
+  pull_request:
+    branches:
+      - main
 
 jobs:
   test:
