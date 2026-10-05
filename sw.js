@@ -1,68 +1,41 @@
-const CACHE = 'indonesian-study-v8';
-const CORE = [
-  './', './index.html', './app.css', './app.js', './vocab-review-panel.css', './vocab-review-panel.js', './manifest.json', './favicon.svg',
-  './content/manifest.js', './content/vocab/custom-focus.js', './content/vocab/expanded.js', './content/vocab/expanded-01-05.js', './content/vocab/expanded-06-10.js', './content/vocab/expanded-11-15.js', './content/vocab/pbwl-supplement.js', './content/morphology-families.js',
-  './lesson-selection.js', './vocab-sections.js', './vocab-deck.js', './vocab-charts.js', './morphology-order.js', './navigation.js', './progress.js',
+// Offline shell. The app supplies the content module URLs after registration.
+// RELEASE INVARIANT: bump this cache version for EVERY deployed app/content change.
+// The update modal depends on the service-worker source changing.
+const CACHE = 'indonesian-study-v22';
+const SHELL = [
+  './', './index.html', './app.js', './app.css', './vocab-review-panel.js', './vocab-review-panel.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './vocab-sections.js', './lesson-selection.js', './navigation.js', './morphology-order.js',
   './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
+  './content/manifest.js', './content/morphology-families.js', './content/vocab/custom-focus.js', './manifest.json', './sw.js'
 ];
-
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)).then(() => self.skipWaiting()));
+  // Bypass the browser HTTP cache when populating a new version.
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL.map(path => new Request(path, { cache: 'reload' })))));
 });
-
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('indonesian-study-') && key !== CACHE).map(key => caches.delete(key))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil(Promise.all([
+    caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('indonesian-study-') && key !== CACHE).map(key => caches.delete(key)))),
+    self.clients.claim()
+  ]));
 });
-
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-  if (url.origin !== location.origin) return;
-  event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    if (cached) return cached;
-    try {
-      const response = await fetch(event.request);
-      if (response.ok) {
-        const cache = await caches.open(CACHE);
-        cache.put(event.request, response.clone());
-      }
-      return response;
-    } catch (error) {
-      if (event.request.mode === 'navigate') {
-        const fallback = await caches.match('./index.html');
-        if (fallback) return fallback;
-      }
-      throw error;
-    }
-  })());
-});
-
 self.addEventListener('message', event => {
-  if (event.data?.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+  if (event.data?.type === 'SKIP_WAITING') { event.waitUntil(self.skipWaiting()); return; }
+  if (event.data?.type !== 'CACHE_CONTENT') return;
+  const urls = event.data.urls;
+  const safe = Array.isArray(urls) && urls.length > 0 && urls.every(url => typeof url === 'string' && (/^\.\/content\/units\/[a-z0-9_-]+\.js$/.test(url) || /^\.\/content\/textbook\/topik[0-9]{2}\.js$/.test(url) || url === './content/vocab/pbwl-supplement.js' || url === './content/vocab/custom-focus.js' || /^\.\/content\/vocab\/expanded(?:-(?:01-05|06-10|11-15))?\.js$/.test(url)));
+  if (!safe) { event.ports[0]?.postMessage({ ready: false }); return; }
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, { cache: 'reload' })))).then(() => {
+    event.ports[0]?.postMessage({ ready: true });
+  }).catch(() => { event.ports[0]?.postMessage({ ready: false }); }));
+});
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html'))));
     return;
   }
-  if (event.data?.type !== 'CACHE_CONTENT') return;
-  const port = event.ports?.[0];
-  event.waitUntil((async () => {
-    try {
-      const cache = await caches.open(CACHE);
-      const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
-      const unique = [...new Set(urls)];
-      await Promise.all(unique.map(async url => {
-        const request = new Request(url, { cache: 'reload' });
-        const response = await fetch(request);
-        if (!response.ok) throw new Error(`Could not cache ${url}`);
-        await cache.put(request, response);
-      }));
-      port?.postMessage({ ready: true });
-    } catch {
-      port?.postMessage({ ready: false });
-    }
-  })());
+  event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
+    // Cache only successful local reads; the app does not request remote assets.
+    if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(event.request, copy))); }
+    return response;
+  })));
 });
