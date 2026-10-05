@@ -192,14 +192,16 @@ vocabulary, progress/SRS helpers, deck ordering, charts, lesson selection,
 vocabulary section logic, and morphology helpers.
 
 `vocab-review-panel.js` is an additive Duff-port layer. It reads the same
-persistent selection/direction/progress stores, renders the bottom review panel,
-and provides the fast-forward / return-to-circulation scheduling actions without
-creating a second SRS data model.
+persistent selection/direction/progress stores and renders the bottom review
+panel. Its pure scheduling/sorting operations live in `vocab-review-state.js`,
+so fast-forward and return-to-circulation use the existing progress structure
+rather than creating a second SRS data model.
 
 ## Offline/cache coupling
 
-`sw.js` precaches the shell (including both review-panel assets) and accepts the
-content URLs supplied through `UNIT_URLS` in `content/manifest.js`.
+`sw.js` precaches the shell, including all review-panel JS/CSS assets, and
+accepts the content URLs supplied through `UNIT_URLS` in
+`content/manifest.js`.
 
 When adding a new runtime content module:
 
