@@ -1,4 +1,4 @@
-import { dueVocab, recordVocabReview, getVocabProgressEntry } from './progress.js';
+import { dueVocab, recordVocabReview } from './progress.js';
 
 function shuffleIds(ids, random = Math.random) {
   const result = [...ids];
@@ -42,6 +42,5 @@ export function reviewVocab(deck, progress, action, spaced, now = Date.now(), di
   if (!deck.active.length) return { deck, progress };
   const rating = action === 'next' && spaced ? 'again' : action;
   const nextProgress = rating === 'next' ? progress : recordVocabReview(progress, deck.active[0], rating, spaced, now, direction);
-  const leech = spaced && rating === 'again' && getVocabProgressEntry(nextProgress, deck.active[0], direction)?.leechDrill;
-  return { deck: markDeck(deck, leech ? 'unsure' : rating, spaced), progress: nextProgress };
+  return { deck: markDeck(deck, rating, spaced), progress: nextProgress };
 }
