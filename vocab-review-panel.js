@@ -53,7 +53,10 @@ function resetLiveSession() {
 }
 
 function ensureLiveSession(cards, state, now, direction, spaced) {
-  if (!spaced) return null;
+  if (!spaced) {
+    resetLiveSession();
+    return null;
+  }
   const key = sessionKey(cards, direction, spaced);
   if (!liveSession || liveSessionKey !== key) {
     liveSession = createReviewSession(dueVocab(cards, state, now, direction).map(card => card.id));
@@ -294,7 +297,7 @@ if (typeof document !== 'undefined' && typeof localStorage !== 'undefined') {
   });
   document.addEventListener('change', event => {
     if (event.target.matches('#vocab-deck, #vocab-section, #lesson-vocab-section, #import-file')) {
-      if (event.target.matches('#import-file')) resetLiveSession();
+      resetLiveSession();
       scheduleRender();
     }
   });
