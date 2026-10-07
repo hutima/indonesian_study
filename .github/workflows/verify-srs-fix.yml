@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/duff-srs-session-stats
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
