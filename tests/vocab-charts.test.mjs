@@ -35,15 +35,16 @@ test('histograms keep recognition and production confidence separate', () => {
 });
 
 
-test('due histogram keeps live repeat-queue cards in the now bucket even when SRS dueAt is later', () => {
+test('live session owns the now bucket while deferred elapsed cards stay in today', () => {
   const now = new Date(2026, 9, 7, 9).getTime();
-  const cards = [{ id: 'again' }, { id: 'later' }];
+  const cards = [{ id: 'again' }, { id: 'elapsed' }, { id: 'later' }];
   const state = {
     version: 1,
     items: {},
     vocabDirections: {
       i2e: {
         again: { correct: 0, wrong: 1, again: 1, dueAt: now + 10 * 60 * 1000 },
+        elapsed: { correct: 1, wrong: 0, know: 1, dueAt: now - 60 * 60 * 1000 },
         later: { correct: 1, wrong: 0, know: 1, dueAt: now + 2 * 86400000 }
       },
       e2i: {}
@@ -51,8 +52,9 @@ test('due histogram keeps live repeat-queue cards in the now bucket even when SR
   };
   const due = dueBuckets(cards, state, now, 'i2e', new Set(['again']));
   assert.equal(due[0], 1);
+  assert.equal(due[1], 1);
   assert.equal(due[3], 1);
-  assert.equal(due.reduce((sum, count) => sum + count, 0), 2);
+  assert.equal(due.reduce((sum, count) => sum + count, 0), 3);
 });
 
 
