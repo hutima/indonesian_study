@@ -1,9 +1,11 @@
 import { getVocabProgressEntry } from './progress.js';
 
-export function dueBuckets(cards, state, now = Date.now(), direction = 'i2e') {
+export function dueBuckets(cards, state, now = Date.now(), direction = 'i2e', sessionIds = null) {
   const counts = new Array(16).fill(0); // now, today, 1–13 days, 14+
   const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const hasLiveSession = sessionIds && typeof sessionIds.has === 'function';
   for (const card of cards) {
+    if (hasLiveSession && sessionIds.has(card.id)) { counts[0]++; continue; }
     const due = getVocabProgressEntry(state, card.id, direction)?.dueAt || 0;
     if (!due || due <= now) { counts[0]++; continue; }
     const day = new Date(due); day.setHours(0, 0, 0, 0);
