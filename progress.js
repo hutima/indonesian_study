@@ -312,20 +312,33 @@ export function recordVocabReview(state, id, rating, spaced = true, now = Date.n
   applyStudyCredit(next, rating === 'know' ? 8 : rating === 'unsure' ? 4 : 2, now);
   if (!spaced) return next;
   if (rating === 'again') {
-    item.streak = 0; item.easyStreak = 0;
+  const wasInRelearn = item.inRelearn === true;
+  const wasLeech = item.leechDrill === true;
+  const establishedDays = Math.max(days(item.lastEasyIntervalDays), days(item.intervalDays));
+  // A lapse is a new failure episode of previously established spacing.
+  // Fresh-card retries and repeated Again marks within one relearn
+  // episode only recycle through middle; they do not repeatedly lower
+  // ease/stage or inflate the lifetime lapse counter.
+  const startsLapseEpisode = !wasInRelearn && !wasLeech && establishedDays > 0;
+  item.streak = 0; item.easyStreak = 0;
+  if (startsLapseEpisode) {
     item.srsStage = Math.max(0, getSrsStage(item) - 1);
     item.ease = clamp(getSrsEase(item) - .2, 1.3, 3);
     item.lapseCount = count(item.lapseCount) + 1;
-    if (item.leechDrill || item.lapseCount >= LEECH_LAPSE_THRESHOLD) {
-      item.leechDrill = true; item.leechStreak = 0;
-      item.inRelearn = false; item.relearnLeft = 0;
-      item.lastEasyIntervalDays = LEECH_DRILL_DAYS;
-      schedule(item, LEECH_DRILL_DAYS, now);
-    } else {
-      if (!item.inRelearn) item.preLapseIntervalDays = Math.max(days(item.lastEasyIntervalDays), days(item.intervalDays));
-      item.inRelearn = true; item.relearnLeft = SRS_HARD_RELEARN_STEPS;
-      item.intervalDays = 0; item.dueAt = now + SRS_AGAIN_MS;
-    }
+    item.preLapseIntervalDays = establishedDays;
+  }
+  const shouldLeech = wasLeech || (startsLapseEpisode && item.lapseCount >= LEECH_LAPSE_THRESHOLD);
+  if (shouldLeech) {
+    item.leechDrill = true; item.leechStreak = 0;
+    item.inRelearn = false; item.relearnLeft = 0;
+    // Leech controls the schedule after a clean answer. A failed
+    // attempt keeps the normal short Again timer and live middle loop.
+    item.intervalDays = 0; item.dueAt = now + SRS_AGAIN_MS;
+  } else {
+    if (!wasInRelearn) item.preLapseIntervalDays = establishedDays;
+    item.inRelearn = true; item.relearnLeft = SRS_HARD_RELEARN_STEPS;
+    item.intervalDays = 0; item.dueAt = now + SRS_AGAIN_MS;
+  }
   } else if (item.leechDrill) {
     item.leechStreak = count(item.leechStreak) + 1;
     if (item.leechStreak < LEECH_UNPIN_STREAK) {

@@ -78,3 +78,35 @@ test('deck due selection is independent by vocabulary direction', () => {
   assert.deepEqual(recognition.active, []);
   assert.deepEqual(production.active, ['one']);
 });
+
+
+test('a card entering leech drill still goes through middle and repeats when active empties', () => {
+  const now = 1_800_000_000_000;
+  const id = 'one';
+  const progress = {
+    version: 1,
+    items: {},
+    vocabDirections: {
+      i2e: {
+        [id]: {
+          correct: 5, wrong: 3, again: 3, unsure: 0, know: 5,
+          first: now - 20 * 86400000, last: now - 86400000,
+          streak: 5, easyStreak: 5, srsStage: 4, ease: 2.3,
+          intervalDays: 14, lastEasyIntervalDays: 14,
+          lapseCount: 3, inRelearn: false, relearnLeft: 0,
+          preLapseIntervalDays: 14, leechDrill: false, leechStreak: 2,
+          confidenceHistory: [1, 1, 1, 1, 1]
+        }
+      },
+      e2i: {}
+    }
+  };
+  const deck = { active: ['one', 'two'], middle: [], completed: 0, total: 2 };
+  const hard = reviewVocab(deck, progress, 'again', true, now);
+  assert.equal(getVocabProgressEntry(hard.progress, id, 'i2e').leechDrill, true);
+  assert.deepEqual(hard.deck.active, ['two']);
+  assert.deepEqual(hard.deck.middle, ['one']);
+  const clearedOther = reviewVocab(hard.deck, hard.progress, 'know', true, now + 1000);
+  assert.deepEqual(clearedOther.deck.active, ['one']);
+  assert.deepEqual(clearedOther.deck.middle, []);
+});

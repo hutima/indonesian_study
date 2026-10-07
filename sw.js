@@ -1,7 +1,7 @@
 // Offline shell. The app supplies the content module URLs after registration.
 // RELEASE INVARIANT: bump this cache version for EVERY deployed app/content change.
 // The update modal depends on the service-worker source changing.
-const CACHE = 'indonesian-study-v23';
+const CACHE = 'indonesian-study-v24';
 const SHELL = [
   './', './index.html', './app.js', './app.css', './vocab-review-panel.js', './vocab-review-state.js', './vocab-review-panel.css', './progress.js', './vocab-deck.js', './vocab-charts.js', './vocab-sections.js', './lesson-selection.js', './navigation.js', './morphology-order.js',
   './js/domain/srs/constants.js', './js/domain/srs/scheduler.js', './js/utils/helpers.js',

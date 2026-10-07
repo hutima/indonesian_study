@@ -69,13 +69,76 @@ test('eight-month Duff cadence stabilizes before growth and retains relearn stat
   assert.equal(getVocabProgressEntry(uncertain, id, 'i2e').dueAt, start + 6 * 86400000 + 7200000);
 });
 
-test('four hard lapses invoke Duff relaxed leech drill', () => {
+test('fresh-card Again retries stay in learning and never count as leech lapses', () => {
+  const id = 'id-u02-voc-baca';
+  const start = 1_700_000_000_000;
   let state = { version: 1, items: {} };
-  for (let n = 0; n < 4; n++) state = recordVocabReview(state, 'id-u02-voc-baca', 'again', true, 1_700_000_000_000 + n * 86400000);
-  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').leechDrill, true);
-  assert.equal(getVocabProgressEntry(state, 'id-u02-voc-baca', 'i2e').intervalDays, 1);
+  for (let n = 0; n < 6; n++) {
+    const now = start + n * 1000;
+    state = recordVocabReview(state, id, 'again', true, now);
+    const item = getVocabProgressEntry(state, id, 'i2e');
+    assert.equal(item.dueAt, now + 300000);
+    assert.notEqual(item.leechDrill, true);
+  }
+  const item = getVocabProgressEntry(state, id, 'i2e');
+  assert.equal(item.lapseCount || 0, 0);
+  assert.equal(item.srsStage || 0, 0);
 });
 
+test('repeated Again during one established-card relearn episode counts one lapse', () => {
+  const id = 'id-u02-voc-baca';
+  const start = 1_700_000_000_000;
+  let state = { version: 1, items: {} };
+  for (let n = 0; n < 5; n++) state = recordVocabReview(state, id, 'know', true, start + n * 86400000);
+  const before = getVocabProgressEntry(state, id, 'i2e');
+  const stageBefore = before.srsStage;
+  state = recordVocabReview(state, id, 'again', true, start + 6 * 86400000);
+  const first = getVocabProgressEntry(state, id, 'i2e');
+  assert.equal(first.lapseCount, 1);
+  assert.equal(first.srsStage, stageBefore - 1);
+  const easeAfterFirst = first.ease;
+  for (let n = 1; n <= 4; n++) {
+    state = recordVocabReview(state, id, 'again', true, start + 6 * 86400000 + n * 1000);
+  }
+  const repeated = getVocabProgressEntry(state, id, 'i2e');
+  assert.equal(repeated.lapseCount, 1);
+  assert.equal(repeated.srsStage, stageBefore - 1);
+  assert.ok(Math.abs(repeated.ease - easeAfterFirst) < 1e-9);
+  assert.notEqual(repeated.leechDrill, true);
+});
+
+test('fourth genuine established-card lapse flags leech but stays on the short Again timer', () => {
+  const id = 'id-u02-voc-baca';
+  const now = 1_800_000_000_000;
+  const state = {
+    version: 1,
+    items: {},
+    vocabDirections: {
+      i2e: {
+        [id]: {
+          correct: 5, wrong: 3, again: 3, unsure: 0, know: 5,
+          first: now - 20 * 86400000, last: now - 86400000,
+          streak: 5, easyStreak: 5, srsStage: 4, ease: 2.3,
+          intervalDays: 14, lastEasyIntervalDays: 14,
+          lapseCount: 3, inRelearn: false, relearnLeft: 0,
+          preLapseIntervalDays: 14, leechDrill: false, leechStreak: 2,
+          confidenceHistory: [1, 1, 1, 1, 1]
+        }
+      },
+      e2i: {}
+    }
+  };
+  let next = recordVocabReview(state, id, 'again', true, now);
+  let item = getVocabProgressEntry(next, id, 'i2e');
+  assert.equal(item.lapseCount, 4);
+  assert.equal(item.leechDrill, true);
+  assert.equal(item.leechStreak, 0);
+  assert.equal(item.dueAt, now + 300000);
+  next = recordVocabReview(next, id, 'again', true, now + 1000);
+  item = getVocabProgressEntry(next, id, 'i2e');
+  assert.equal(item.lapseCount, 4);
+  assert.equal(item.dueAt, now + 1000 + 300000);
+});
 
 test('vocab reviews keep timestamps, rating breakdown, XP, and daily streaks', () => {
   const id = 'id-u01-voc-rumah';
