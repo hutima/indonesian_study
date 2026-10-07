@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as reviewState from '../vocab-review-state.js';
 import { advanceVocabScheduling, returnVocabToDue, sortReviewCards } from '../vocab-review-state.js';
 
 function entry(overrides = {}) {
@@ -90,6 +91,29 @@ test('Duff return-to-circulation keeps review history while making the chosen di
   assert.equal(result.know, 8);
   assert.deepEqual(result.confidenceHistory, [1, 1, .5, 1]);
   assert.ok(state.vocabDirections.i2e.kata.dueAt > now);
+});
+
+test('live review session mirrors Duff active and middle piles across a repeated spaced pass', () => {
+  assert.equal(typeof reviewState.createReviewSession, 'function');
+  assert.equal(typeof reviewState.advanceReviewSession, 'function');
+
+  const now = 1_800_000_000_000;
+  const state = { version: 1, items: {}, vocabDirections: { i2e: {}, e2i: {} } };
+  let session = reviewState.createReviewSession(['a', 'b']);
+  assert.deepEqual(session.active, ['a', 'b']);
+  assert.deepEqual(session.middle, []);
+
+  session = reviewState.advanceReviewSession(session, state, 'a', 'again', true, now, 'i2e');
+  assert.deepEqual(session.active, ['b']);
+  assert.deepEqual(session.middle, ['a']);
+
+  session = reviewState.advanceReviewSession(session, state, 'b', 'again', true, now + 1, 'i2e');
+  assert.deepEqual(session.active, ['a', 'b']);
+  assert.deepEqual(session.middle, []);
+
+  session = reviewState.advanceReviewSession(session, state, 'a', 'know', true, now + 2, 'i2e');
+  assert.deepEqual(session.active, ['b']);
+  assert.deepEqual(session.middle, []);
 });
 
 test('review rows sort by last seen, Indonesian alphabet, and lowest confidence first', () => {

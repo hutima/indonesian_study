@@ -1,3 +1,5 @@
+import { reviewVocab } from './vocab-deck.js';
+
 const SRS_DAY_MS = 22 * 60 * 60 * 1000;
 const SRS_FULL_DAY_MS = 24 * 60 * 60 * 1000;
 const SORT_MODES = new Set(['lastSeen', 'alphabetical', 'confidence']);
@@ -52,6 +54,34 @@ function confidencePct(entry) {
     ? history.reduce((sum, value) => sum + value, 0) / history.length
     : (Math.max(0, Number(entry.correct) || 0) / Math.max(1, (Number(entry.correct) || 0) + (Number(entry.wrong) || 0)));
   return Math.round(fraction * 100);
+}
+
+/** Create the live Duff-style session piles from the cards due when the spaced session starts. */
+export function createReviewSession(dueIds = []) {
+  const active = [...new Set((dueIds || []).filter(id => typeof id === 'string' && id))];
+  return { active, middle: [], completed: 0, total: active.length };
+}
+
+/**
+ * Advance a shadow copy of the live vocabulary deck through the same pure
+ * reviewVocab() path as the study UI. The current card is moved to the head
+ * first because the panel tracks membership rather than shuffled order.
+ */
+export function advanceReviewSession(session, state, cardId, action, spaced = true, now = Date.now(), direction = 'i2e') {
+  const active = Array.isArray(session?.active) ? [...session.active] : [];
+  if (!cardId || !active.includes(cardId)) return {
+    active,
+    middle: Array.isArray(session?.middle) ? [...session.middle] : [],
+    completed: Math.max(0, Number(session?.completed) || 0),
+    total: Math.max(0, Number(session?.total) || 0)
+  };
+  const aligned = {
+    active: [cardId, ...active.filter(id => id !== cardId)],
+    middle: Array.isArray(session?.middle) ? [...session.middle] : [],
+    completed: Math.max(0, Number(session?.completed) || 0),
+    total: Math.max(0, Number(session?.total) || 0)
+  };
+  return reviewVocab(aligned, state, action, spaced, now, direction).deck;
 }
 
 /** Pull selected due dates closer without changing review history. */
