@@ -35,6 +35,27 @@ test('histograms keep recognition and production confidence separate', () => {
 });
 
 
+test('due histogram keeps live repeat-queue cards in the now bucket even when SRS dueAt is later', () => {
+  const now = new Date(2026, 9, 7, 9).getTime();
+  const cards = [{ id: 'again' }, { id: 'later' }];
+  const state = {
+    version: 1,
+    items: {},
+    vocabDirections: {
+      i2e: {
+        again: { correct: 0, wrong: 1, again: 1, dueAt: now + 10 * 60 * 1000 },
+        later: { correct: 1, wrong: 0, know: 1, dueAt: now + 2 * 86400000 }
+      },
+      e2i: {}
+    }
+  };
+  const due = dueBuckets(cards, state, now, 'i2e', new Set(['again']));
+  assert.equal(due[0], 1);
+  assert.equal(due[3], 1);
+  assert.equal(due.reduce((sum, count) => sum + count, 0), 2);
+});
+
+
 test('proficiency bands are 100% of only the cards passed in', () => {
   const state = {
     version: 1,
