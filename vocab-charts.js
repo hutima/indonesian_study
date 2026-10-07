@@ -7,7 +7,7 @@ export function dueBuckets(cards, state, now = Date.now(), direction = 'i2e', se
   for (const card of cards) {
     if (hasLiveSession && sessionIds.has(card.id)) { counts[0]++; continue; }
     const due = getVocabProgressEntry(state, card.id, direction)?.dueAt || 0;
-    if (!due || due <= now) { counts[0]++; continue; }
+    if (!due || due <= now) { counts[hasLiveSession ? 1 : 0]++; continue; }
     const day = new Date(due); day.setHours(0, 0, 0, 0);
     const delta = Math.round((day - start) / 86400000);
     counts[delta <= 0 ? 1 : Math.min(delta + 1, 15)]++;
