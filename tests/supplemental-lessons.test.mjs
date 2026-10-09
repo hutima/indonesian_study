@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as manifest from '../content/manifest.js';
+import { resolveCustomVocabulary } from '../content/vocab/custom-focus.js';
 import { itemsForMode } from '../lesson-selection.js';
 
 const SET_PHRASES = [
@@ -38,6 +39,7 @@ test('manifest exposes two selectable vocabulary-only supplemental lessons', () 
     assert.deepEqual(unit.morphology, []);
     assert.deepEqual(unit.grammar, []);
     assert.deepEqual(unit.readings, []);
+    assert.equal(new Set(unit.vocabulary.map(card => card.id)).size, unit.vocabulary.length);
   }
 });
 
@@ -46,7 +48,9 @@ test('set phrases supplemental lesson contains the requested 49 forms in order',
   assert.ok(unit);
   assert.deepEqual(unit.vocabulary.map(card => card.form), SET_PHRASES);
   assert.equal(unit.vocabulary.length, 49);
-  assert.equal(unit.vocabulary.find(card => card.form === 'sejumlah')?.id, 'id-focus-sejumlah');
+  const focusSejumlah = resolveCustomVocabulary(manifest.CORE_UNITS).find(card => card.form === 'sejumlah');
+  assert.ok(focusSejumlah);
+  assert.equal(unit.vocabulary.find(card => card.form === 'sejumlah')?.id, focusSejumlah.id);
 });
 
 test('days and numbers supplemental lesson contains weekdays and numbers one through twenty', () => {
