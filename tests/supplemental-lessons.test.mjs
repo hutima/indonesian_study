@@ -30,8 +30,10 @@ test('manifest exposes two selectable vocabulary-only supplemental lessons', () 
   assert.ok(Array.isArray(manifest.SUPPLEMENTAL_UNITS));
   assert.equal(manifest.SUPPLEMENTAL_UNITS.length, 2);
   assert.ok(Array.isArray(manifest.SELECTABLE_UNITS));
-  assert.equal(manifest.SELECTABLE_UNITS.length, manifest.UNITS.length + 2);
+  assert.equal(manifest.SELECTABLE_UNITS.length, manifest.UNITS.length);
+  assert.equal(manifest.UNITS.length, manifest.CORE_UNITS.length + 2);
   for (const unit of manifest.SUPPLEMENTAL_UNITS) {
+    assert.ok(manifest.SELECTABLE_UNITS.some(candidate => candidate.id === unit.id));
     assert.equal(unit.supplemental, true);
     assert.deepEqual(unit.morphology, []);
     assert.deepEqual(unit.grammar, []);
@@ -66,4 +68,5 @@ test('topic selector contains a supplemental practice group', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /id="supplemental-grid"/);
   assert.match(html, />Supplemental practice</);
+  assert.match(html, /src="\.\/supplemental-selector\.js"/);
 });
