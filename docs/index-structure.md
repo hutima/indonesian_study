@@ -29,7 +29,7 @@ actually exists here.
   #lesson-dialog
   #progress-dialog
   #update-dialog
-  module scripts: app.js, vocab-review-panel.js
+  module scripts: app.js, supplemental-selector.js, vocab-review-panel.js
 ```
 
 ## Main study shell
@@ -134,8 +134,18 @@ Progress analytics live in the dedicated modal instead of this in-flow panel.
 - `#clear-lessons`
 - `#lesson-grid`
 - `#foundation-grid`
+- `#supplemental-grid`
 - `#dialog-selection-summary`
 - `#done-lessons`
+
+`#supplemental-grid` is the dedicated **Supplemental practice** group. The two
+vocabulary-only lessons are defined in `content/supplemental-units.js`:
+**Set phrases** and **Days & numbers**. `app.js` still owns their selection
+state and click handlers by rendering them through the foundation-unit source;
+`supplemental-selector.js` moves those rendered tiles into the supplemental
+group and relabels their display text. Shared surface forms keep the canonical
+card ID, and `itemsForMode()` suppresses duplicate IDs when the same card is
+selected through more than one lesson.
 
 The personal focus deck is intentionally not maintained from this dialog; it is
 selected from `#vocab-deck` and edited in the repository data module.
@@ -180,16 +190,21 @@ Refresh now; otherwise the old version remains usable.
 
 ## Script entry points
 
-The page loads two modules, in this order:
+The page loads three modules, in this order:
 
 ```html
 <script type="module" src="./app.js"></script>
+<script type="module" src="./supplemental-selector.js"></script>
 <script type="module" src="./vocab-review-panel.js"></script>
 ```
 
 `app.js` owns the core study UI and imports the content manifest, personal focus
 vocabulary, progress/SRS helpers, deck ordering, charts, lesson selection,
 vocabulary section logic, and morphology helpers.
+
+`supplemental-selector.js` is a small presentation layer that places the
+supplemental vocabulary-only lessons in their own selector group while leaving
+selection state and study behavior in the existing app flow.
 
 `vocab-review-panel.js` is an additive Duff-port layer. It reads the same
 persistent selection/direction/progress stores and renders the bottom review
@@ -199,8 +214,8 @@ rather than creating a second SRS data model.
 
 ## Offline/cache coupling
 
-`sw.js` precaches the shell, including all review-panel JS/CSS assets, and
-accepts the content URLs supplied through `UNIT_URLS` in
+`sw.js` precaches the shell, including all review-panel and supplemental-selector
+JS assets, and accepts the content URLs supplied through `UNIT_URLS` in
 `content/manifest.js`.
 
 When adding a new runtime content module:
