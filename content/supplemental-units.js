@@ -68,12 +68,12 @@ export const SET_PHRASE_DEFINITIONS = [
   setPhrase('kurang dari', 'less than', 'comparison phrase', 'neutral')
 ];
 
-const day = (form, meaning) => ({ form, meaning, pos: 'noun', register: 'neutral', kind: 'root', section: 'everyday' });
+const day = (form, meaning, extra = {}) => ({ form, meaning, pos: 'noun', register: 'neutral', kind: 'root', section: 'everyday', ...extra });
 const number = (form, meaning) => ({ form, meaning, pos: 'number', register: 'neutral', kind: 'root', section: 'everyday' });
 
 export const DAYS_AND_NUMBERS_DEFINITIONS = [
   day('Senin', 'Monday'), day('Selasa', 'Tuesday'), day('Rabu', 'Wednesday'),
-  day('Kamis', 'Thursday'), day('Jumat', 'Friday'), day('Sabtu', 'Saturday'), day('Minggu', 'Sunday'),
+  day('Kamis', 'Thursday'), day('Jumat', 'Friday'), day('Sabtu', 'Saturday'), day('Minggu', 'Sunday', { caseSensitive: true }),
   number('satu', 'one; 1'), number('dua', 'two; 2'), number('tiga', 'three; 3'), number('empat', 'four; 4'),
   number('lima', 'five; 5'), number('enam', 'six; 6'), number('tujuh', 'seven; 7'), number('delapan', 'eight; 8'),
   number('sembilan', 'nine; 9'), number('sepuluh', 'ten; 10'), number('sebelas', 'eleven; 11'),
@@ -83,20 +83,25 @@ export const DAYS_AND_NUMBERS_DEFINITIONS = [
 ];
 
 function indexCards(units) {
-  const byForm = new Map();
+  const byExactForm = new Map();
+  const byNormalizedForm = new Map();
   for (const unit of units || []) {
     for (const card of unit.vocabulary || []) {
+      if (!byExactForm.has(card.form)) byExactForm.set(card.form, []);
+      byExactForm.get(card.form).push(card);
       const key = normalizeForm(card.form);
       if (!key) continue;
-      if (!byForm.has(key)) byForm.set(key, []);
-      byForm.get(key).push(card);
+      if (!byNormalizedForm.has(key)) byNormalizedForm.set(key, []);
+      byNormalizedForm.get(key).push(card);
     }
   }
-  return byForm;
+  return { byExactForm, byNormalizedForm };
 }
 
-function resolveDefinition(definition, unitId, prefix, byForm) {
-  const matches = byForm.get(normalizeForm(definition.form)) || [];
+function resolveDefinition(definition, unitId, prefix, index) {
+  const exactMatches = index.byExactForm.get(definition.form) || [];
+  const normalizedMatches = definition.caseSensitive ? [] : index.byNormalizedForm.get(normalizeForm(definition.form)) || [];
+  const matches = exactMatches.length ? exactMatches : normalizedMatches;
   const canonical = matches.length ? matches[0] : null;
   return {
     ...(canonical || {}),
@@ -123,7 +128,7 @@ function vocabularyOnlyUnit(id, title, description, vocabulary) {
 }
 
 export function buildSupplementalUnits(coreUnits) {
-  const byForm = indexCards(coreUnits);
+  const index = indexCards(coreUnits);
   const phraseId = 'id-supplemental-set-phrases';
   const basicsId = 'id-supplemental-days-numbers';
   return [
@@ -131,13 +136,13 @@ export function buildSupplementalUnits(coreUnits) {
       phraseId,
       'Set phrases',
       'High-frequency formal/news chunks and reusable multiword expressions for recognition and production.',
-      SET_PHRASE_DEFINITIONS.map(definition => resolveDefinition(definition, phraseId, 'id-supp-set', byForm))
+      SET_PHRASE_DEFINITIONS.map(definition => resolveDefinition(definition, phraseId, 'id-supp-set', index))
     ),
     vocabularyOnlyUnit(
       basicsId,
       'Days & numbers',
       'Core weekdays and the numbers one through twenty.',
-      DAYS_AND_NUMBERS_DEFINITIONS.map(definition => resolveDefinition(definition, basicsId, 'id-supp-basic', byForm))
+      DAYS_AND_NUMBERS_DEFINITIONS.map(definition => resolveDefinition(definition, basicsId, 'id-supp-basic', index))
     )
   ];
 }
