@@ -11,7 +11,13 @@ export function selectedUnits(units, ids) {
   return units.filter(unit => chosen.has(unit.id));
 }
 export function itemsForMode(units, ids, mode) {
-  return selectedUnits(units, ids).flatMap(unit => mode === 'reading' ? unit.readings : unit[mode] || []);
+  const items = selectedUnits(units, ids).flatMap(unit => mode === 'reading' ? unit.readings : unit[mode] || []);
+  const seen = new Set();
+  return items.filter(item => {
+    if (!item?.id || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 export function nextLessonId(units, ids) {
   if (ids.length !== 1) return null;
