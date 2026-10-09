@@ -60,6 +60,10 @@ export const ACTIVE_STRUGGLE_WORDS = [
   { form: 'sambil', meaning: 'while; while doing something else at the same time', pos: 'conjunction / adverb', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson', note: 'Simultaneous actions; do not confuse with sampai = until.' },
   { form: 'sampai', meaning: 'until; up to; arrive/reach', pos: 'preposition / verb', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson', note: 'For a time endpoint: sampai jam sembilan = until nine.' },
   { form: 'sehingga', meaning: 'so; with the result that', pos: 'conjunction', register: 'formal', kind: 'root', section: 'everyday', source: 'production lesson', note: 'Result/consequence connector; contrast agar/supaya = purpose.' },
+  { form: 'walaupun', meaning: 'although; even though', pos: 'conjunction', register: 'neutral', kind: 'derived', root: 'walau', section: 'everyday', source: 'production lesson', note: 'Concessive connector: walaupun X, (tetap) Y.' },
+  { form: 'paling lambat', meaning: 'at the latest; no later than', pos: 'adverbial phrase', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson' },
+  { form: 'perubahan', meaning: 'change; alteration', pos: 'noun', register: 'neutral', kind: 'derived', root: 'ubah', canonicalId: 'id-u03-voc-perubahan', section: 'everyday', source: 'production lesson' },
+  { form: 'longgar', meaning: 'loose; relaxed; not tight', pos: 'adjective', register: 'neutral', kind: 'root', section: 'everyday', source: 'production lesson' },
   { form: 'jadinya', meaning: 'so; as a result; what it became', pos: 'discourse marker', register: 'informal', kind: 'derived', root: 'jadi', section: 'everyday', source: 'production lesson' }
 ];
 

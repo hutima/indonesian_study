@@ -35,6 +35,13 @@ test('personal focus vocabulary resolves to one stable card identity per word', 
   });
 });
 
+test('recent focus update includes the four curated everyday bottlenecks', () => {
+  const forms = new Set(ACTIVE_STRUGGLE_WORDS.map(word => normalize(word.form)));
+  for (const form of ['walaupun', 'paling lambat', 'perubahan', 'longgar']) {
+    assert.ok(forms.has(form), `${form} should be in the active focus deck`);
+  }
+});
+
 test('completed focus deck is separately resolvable and starts empty', () => {
   assert.deepEqual(COMPLETED_STRUGGLE_WORDS, []);
   assert.deepEqual(resolveCustomVocabulary(UNITS, 'completed'), []);
