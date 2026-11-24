@@ -92,3 +92,21 @@ After editing the focus file:
 
 The current seed list is based on observed lesson/news difficulty and should be
 updated as the learning project continues.
+
+## November 24, 2026 review
+
+Reviewed assessed work through November 23; unattempted scheduled lessons were
+not treated as evidence. Added 22 definitions, bringing the active rotation to
+69 words. Everyday additions target preparation/readiness, seeking information
+versus newly knowing it, transitive/intransitive change, postponing versus
+canceling or deciding, replying, and comparative phrasing. News additions target
+actor/object relationships, proposal/approval status, duration, and contrast
+connectors. Card notes give short examples and relevant Jakarta alternatives.
+
+Existing lesson and supplemental cards retain their canonical IDs; new
+personal-only words have explicit permanent IDs. `lega` and `paling lambat`
+were retrieved independently in repeated lessons and move unchanged into the
+completed deck (2 words), preserving their original personal IDs. Earlier focus
+words without evidence supporting retirement stay active. No SRS migration is
+needed. Service-worker cache version 27 makes the content update discoverable
+by installed copies.
