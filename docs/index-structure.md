@@ -237,3 +237,7 @@ Update this document in the same change when:
 
 Line numbers are intentionally omitted: this file is a structural map, not a
 snapshot of a particular formatting pass.
+
+## Retention (v28)
+
+`retention-toggle` in `vocab-toolbar` enables 20-card vocabulary batches (default off). `new-retention-batch` picks a fresh eligible batch, including mid-session. Batches and cleared cards persist per selection, deck, section, direction, and spacing setting, resetting at 5 AM local time. The existing review scheduler grades cards; Pass is neutral. The new `retention-deck.js` module is precached for offline use.

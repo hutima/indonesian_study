@@ -28,6 +28,8 @@
           <div class="settings-content">
             <label class="theme-label" for="theme-select">Theme</label><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
             <div id="vocab-toolbar" class="vocab-toolbar" aria-label="Vocabulary review settings">
+              <button type="button" id="retention-toggle" aria-pressed="false" title="Review up to 20 eligible words. Hard and Uncertain repeat until Easy. Progress resumes within the day; batches refresh at 5 AM local time.">Retention · 20 cards: Off</button>
+              <button type="button" id="new-retention-batch" hidden>↻ Pick new 20</button>
               <button type="button" id="spaced-toggle" aria-pressed="true">Spaced review: On</button>
             </div>
             <details class="data-tools"><summary>Your progress</summary>
