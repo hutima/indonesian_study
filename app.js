@@ -1,3 +1,4 @@
+import { retentionDayKey, normalizeRetention, retentionDeck, reviewRetention } from './retention-deck.js';
 import { UNITS, FOUNDATION_UNITS, TEXTBOOK_UNITS, UNIT_URLS } from './content/manifest.js';
 import { loadProgress, normalizeProgress, saveProgress, recordAnswer, dueVocab, getGamificationSummary, getCardStats, getVocabProgressEntry, getAchievements, syncGamificationCelebrations, STUDY_LEVELS } from './progress.js';
 import { createDeck, reviewVocab, nextVocabRound, orderDeck } from './vocab-deck.js';
@@ -62,6 +63,17 @@ let vocabSection = VOCAB_SECTIONS.some(([key]) => key === localStorage.getItem(V
 const VOCAB_DECK_KEY = 'indonesian-study-vocab-deck-v1';
 let vocabDeckMode = ['lesson', 'active', 'completed'].includes(localStorage.getItem(VOCAB_DECK_KEY)) ? localStorage.getItem(VOCAB_DECK_KEY) : 'lesson';
 const currentVocabDirection = () => reverse ? 'e2i' : 'i2e';
+const RETENTION_KEY = 'indonesian-study-retention-v1';
+const RETENTION_MODE_KEY = 'indonesian-study-retention-mode-v1';
+let retention = localStorage.getItem(RETENTION_MODE_KEY) === 'true';
+let retentionState;
+try { retentionState = normalizeRetention(JSON.parse(localStorage.getItem(RETENTION_KEY))); }
+catch { retentionState = normalizeRetention(null); }
+const retentionButton = document.querySelector('#retention-toggle');
+const newBatchButton = document.querySelector('#new-retention-batch');
+const retentionScope = () => JSON.stringify([vocabDeckMode, [...lessonIds].sort(), vocabSection, currentVocabDirection(), spaced]);
+function saveRetention() { localStorage.setItem(RETENTION_KEY, JSON.stringify(retentionState)); }
+function pickRetentionBatch() { startVocabDeck(true); render(); }
 let deck;
 let reviewHistory = [];
 let morphOrder = null;
@@ -491,16 +503,23 @@ function nextLabel(items) {
 const poolVocab = () => vocabDeckMode === 'lesson'
   ? filterVocabSection(itemsForMode(UNITS, lessonIds, 'vocabulary'), vocabSection)
   : resolveCustomVocabulary(UNITS, vocabDeckMode);
-function startVocabDeck() {
-  deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle, Math.random, currentVocabDirection());
+function startVocabDeck(replace = false) {
+  if (retention) {
+    const result = retentionDeck(poolVocab(), progress, retentionState, retentionScope(), spaced, currentVocabDirection(), { replace });
+    retentionState = result.state; deck = result.deck; saveRetention();
+  } else deck = createDeck(poolVocab(), progress, spaced, Date.now(), shuffle, Math.random, currentVocabDirection());
   reviewHistory = [];
   revealed = false;
 }
 function markVocab(action) {
+  if (retention && retentionState.day !== retentionDayKey()) { startVocabDeck(); render(); return; }
   if (!deck?.active.length) return;
-  reviewHistory.push({ progress, deck });
+  reviewHistory.push({ progress, deck, ...(retention ? { retentionState: JSON.parse(JSON.stringify(retentionState)) } : {}) });
   if (reviewHistory.length > 40) reviewHistory.shift();
-  ({ progress, deck } = reviewVocab(deck, progress, action, spaced, Date.now(), currentVocabDirection()));
+  if (retention) {
+    const result = reviewRetention(progress, retentionState, retentionScope(), action, spaced, Date.now(), currentVocabDirection());
+    retentionState = result.state; progress = result.progress; deck = result.deck; saveRetention();
+  } else ({ progress, deck } = reviewVocab(deck, progress, action, spaced, Date.now(), currentVocabDirection()));
   saveProgress(localStorage, progress);
   syncCelebrations();
   revealed = false;
@@ -516,6 +535,7 @@ function undoVocab() {
     lastCelebratedBadgeDay: progress.gamification?.lastCelebratedBadgeDay
   };
   ({ progress, deck } = previous);
+  if (retention && previous.retentionState) { retentionState = previous.retentionState; saveRetention(); }
   progress.gamification = { ...progress.gamification, ...celebrationState };
   saveProgress(localStorage, progress);
   revealed = false;
@@ -524,8 +544,8 @@ function undoVocab() {
 function reviewNavigation() {
   const nav = node('div', 'actions review-nav');
   if (reviewHistory.length) nav.append(button('↶ Undo', 'secondary', undoVocab));
-  if (deck.active.length) nav.append(button(spaced ? 'Again →' : 'Next →', 'secondary', () => markVocab('next')));
-  if (!spaced) nav.append(button('↻ Reset', 'secondary', () => { startVocabDeck(); render(); }));
+  if (deck.active.length) nav.append(button(retention ? 'Pass →' : spaced ? 'Again →' : 'Next →', 'secondary', () => markVocab('next')));
+  if (!spaced && !retention) nav.append(button('↻ Reset', 'secondary', () => { startVocabDeck(); render(); }));
   return nav;
 }
 function metadata(item) {
@@ -591,9 +611,14 @@ function renderVocab() {
       : lessonIds.length ? 'No words in this section. Choose another vocabulary section.' : 'Select a textbook lesson or foundation set to begin.';
     panel.append(node('p', 'empty', message)); return;
   }
-  if (!deck) startVocabDeck();
+  if (!deck || retention && retentionState.day !== retentionDayKey()) startVocabDeck();
   const headLabel = vocabDeckMode === 'active' ? 'VOCABULARY · STRUGGLING WORDS' : vocabDeckMode === 'completed' ? 'VOCABULARY · COMPLETED FOCUS' : 'VOCABULARY · FLIP CARDS';
-  head(headLabel, `${deck.completed} of ${deck.total} completed`);
+  head(retention ? 'VOCABULARY · RETENTION · 20 CARDS' : headLabel, `${deck.completed} of ${deck.total} completed`);
+  if (retention && !deck.active.length) {
+    add(panel, node('h2', '', deck.total ? 'Retention batch complete' : 'No eligible cards right now'), node('p', 'subtitle', 'Progress is saved. Batches reset at 5 AM local time.'));
+    panel.append(reviewNavigation(), button(deck.total ? 'Pick 20 more →' : 'Check eligible cards', 'primary', pickRetentionBatch));
+    return;
+  }
   if (!deck.active.length && !spaced && deck.middle.length) {
     add(panel, node('h2', '', 'End of round'), node('p', 'subtitle', `${deck.middle.length} unconfirmed card${deck.middle.length === 1 ? '' : 's'} ready for another pass.`));
     panel.append(reviewNavigation());
@@ -634,7 +659,7 @@ function renderVocab() {
     actions.append(button(`${label}  ${hint}`, style, () => markVocab(rating)));
   }
   panel.append(actions);
-  panel.append(node('p', 'review-hint', spaced ? 'Hard requeues · Uncertain: 2 hr · Easy: from 22 hr · Again → rates Hard' : 'Hard and Uncertain return later · Easy clears the card · Next → does not score'));
+  panel.append(node('p', 'review-hint', retention ? 'Hard and Uncertain repeat in this batch · Easy clears the card · Pass does not score · Pick new 20 anytime' : spaced ? 'Hard requeues · Uncertain: 2 hr · Easy: from 22 hr · Again → rates Hard' : 'Hard and Uncertain return later · Easy clears the card · Next → does not score'));
 }
 
 function choices(question, progressId, next) {
@@ -708,6 +733,9 @@ function renderGrammar(item, items) {
 
 function render() {
   panel.replaceChildren();
+  retentionButton.setAttribute('aria-pressed', String(retention));
+  retentionButton.textContent = `Retention · 20 cards: ${retention ? 'On' : 'Off'}`;
+  newBatchButton.hidden = !retention;
   toolbar.hidden = mode !== 'vocabulary';
   directionButton.hidden = mode !== 'vocabulary';
   directionButton.setAttribute('aria-pressed', String(reverse));
@@ -781,6 +809,7 @@ document.querySelector('#import-file').addEventListener('change', async event =>
   try {
     const imported = JSON.parse(await file.text());
     if (imported?.version !== 1 || !imported.items || typeof imported.items !== 'object' || Array.isArray(imported.items)) throw new Error('Invalid progress file');
+    retentionState = normalizeRetention(null); saveRetention();
     progress = normalizeProgress(imported); saveProgress(localStorage, progress); syncCelebrations(false); startVocabDeck(); renderProgress(); render();
     alert('Progress imported.');
   } catch { alert('Could not read this progress file.'); }
@@ -788,8 +817,20 @@ document.querySelector('#import-file').addEventListener('change', async event =>
 });
 document.querySelector('#reset-button').addEventListener('click', () => {
   if (!confirm('Clear all Indonesian Study progress in this browser?')) return;
+  retentionState = normalizeRetention(null); saveRetention();
   progress = normalizeProgress(null); saveProgress(localStorage, progress); syncCelebrations(false); startVocabDeck(); renderProgress(); render();
 });
+retentionButton.addEventListener('click', () => {
+  retention = !retention; localStorage.setItem(RETENTION_MODE_KEY, String(retention));
+  startVocabDeck(); render();
+});
+newBatchButton.addEventListener('click', pickRetentionBatch);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && retention && retentionState.day !== retentionDayKey()) { startVocabDeck(); render(); }
+});
+setInterval(() => {
+  if (!document.hidden && mode === 'vocabulary' && retention && retentionState.day !== retentionDayKey()) { startVocabDeck(); render(); }
+}, 15000);
 spacedButton.addEventListener('click', () => { spaced = !spaced; spacedButton.setAttribute('aria-pressed', String(spaced)); spacedButton.textContent = `Spaced review: ${spaced ? 'On' : 'Off'}`; startVocabDeck(); render(); });
 directionButton.addEventListener('click', () => {
   reverse = !reverse;
@@ -818,6 +859,7 @@ shuffleButton.addEventListener('click', () => {
     if (!deck) startVocabDeck();
     reviewHistory = [];
     deck = orderDeck(deck, poolVocab(), shuffle);
+    if (retention) { retentionState.sessions[retentionScope()].pending = [...deck.active]; saveRetention(); }
     revealed = false;
   }
   render();
